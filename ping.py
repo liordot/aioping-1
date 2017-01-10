@@ -104,7 +104,7 @@ def _checksum(source_string):
 
 
 def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
-                myStats=None, quiet=False, ipv6=False, verbose=True):
+                myStats=None, ipv6=False, verbose=True):
     """
     Returns either the delay (in ms) or None on timeout.
     """
@@ -152,21 +152,20 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
 
     if recvTime:
         delay = (recvTime-sentTime)*1000
-        if not quiet:
-            if ipv6:
+        if ipv6:
+            host_addr = hostname
+        else:
+            try:
+                host_addr = socket.inet_ntop(socket.AF_INET, struct.pack(
+                    "!I", iphSrcIP))
+            except AttributeError:
+                # Python on windows dosn't have inet_ntop.
                 host_addr = hostname
-            else:
-                try:
-                    host_addr = socket.inet_ntop(socket.AF_INET, struct.pack(
-                        "!I", iphSrcIP))
-                except AttributeError:
-                    # Python on windows dosn't have inet_ntop.
-                    host_addr = hostname
 
-            if verbose:
-                print("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms" % (
-                      dataSize, host_addr, icmpSeqNumber, iphTTL, delay)
-                      )
+        if verbose:
+            print("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms" % (
+                  dataSize, host_addr, icmpSeqNumber, iphTTL, delay)
+                  )
 
         if myStats is not None:
             myStats.pktsRcvd += 1
@@ -177,7 +176,7 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
                 myStats.maxTime = delay
     else:
         delay = None
-        if not quiet:
+        if verbose:
             print("Request timed out.")
 
     return delay, (recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL)
@@ -422,14 +421,14 @@ def quiet_ping(hostname, timeout=3000, count=3,
     if path_finder:
         fakeStats = MStats()
         single_ping(fakeStats, destIP, hostname, timeout,
-                    mySeqNumber, numDataBytes, quiet=True, ipv6=ipv6)[0]
+                    mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False)[0]
         time.sleep(0.5)
 
     i = 1
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
-                            numDataBytes, quiet=True, ipv6=ipv6,
-                            myStats=myStats)
+                            numDataBytes, ipv6=ipv6, myStats=myStats,
+                            verbose=False)
 
         if delay is None:
             delay = 0
