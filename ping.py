@@ -63,19 +63,125 @@ ICMP_MAX_RECV = 2048  # Max size of incoming buffer
 MAX_SLEEP = 1000
 
 
-class MStats:
-    thisIP = "0.0.0.0"
-    pktsSent = 0
-    pktsRcvd = 0
-    minTime = 999999999
-    maxTime = 0
-    totTime = 0
-    avrgTime = 0
-    fracLoss = 1.0
+class MStats2(object):
+
+    def __init__(self):
+        self._timing_list = []  # type: list[int]
+        self._thisIP = '0.0.0.0'
+        self.pktsSent = 0
+        self.pktsRcvd = 0
+
+        self._minTime = None
+        self._maxTime = None
+        self._totTime = None
+        self._avrgTime = None
+        self._fracLoss = None
+
+        self._median_time = None
+        self._pstdev_time = None
+
+    @property
+    def timings(self):
+        for t in self._timing_list:
+            yield t
+
+    @property
+    def thisIP(self):
+        return self._thisIP
+
+    @thisIP.setter
+    def thisIP(self, value):
+        self._thisIP = value
+
+    @property
+    def minTime(self):
+        return self._minTime
+
+    @minTime.setter
+    def minTime(self, value):
+        if self._minTime is None:
+            self._minTime = value
+        elif value < self._minTime:
+            self._minTime = value
+
+    @property
+    def maxTime(self):
+        return self._maxTime
+
+    @maxTime.setter
+    def maxTime(self, value):
+        if self._maxTime is None:
+            self._maxTime = value
+        elif value > self._maxTime:
+            self._maxTime = value
+
+    @property
+    def totTime(self):
+        if self._totTime is None:
+            self._totTime = sum(self._timing_list)
+        return self._totTime
+
+    @property
+    def avrgTime(self):
+        if self._avrgTime is None:
+            if len(self._timing_list) > 0:
+                self._avrgTime = self.totTime / len(self._timing_list)
+        return self._avrgTime
+
+    @property
+    def median_time(self):
+        if self._median_time is None:
+            self._median_time = self._calc_median_time()
+        return self._median_time
+
+    @property
+    def pstdev_time(self):
+        if self._pstdev_time is None:
+            self._pstdev_time = self._calc_pstdev_time()
+        return self._pstdev_time
+
+    @property
+    def fracLoss(self):
+        if self._fracLoss is None:
+            if self.pktsSent > 0:
+                self._fracLoss = (self.pktsSent - self.pktsRcvd) / self.pktsSent
+        return self._fracLoss
+
+    def record_time(self, value):
+        self._timing_list.append(value)
+        self.minTime = value
+        self.maxTime = value
+        self._reset_statistics()
+
+    def _reset_statistics(self):
+        self._totTime = None
+        self._avrgTime = None
+        self._median_time = None
+        self._pstdev_time = None
+
+    def _calc_median_time(self):
+        tlist_len = len(self._timing_list)
+        if tlist_len == 0:
+            return None
+        if tlist_len & 1 == 1:
+            return sorted(self._timing_list)[tlist_len//2]
+        else:
+            halfl = tlist_len // 2
+            return sum(sorted(self._timing_list)[halfl:halfl+2]) / 2
+
+    def _calc_sum_square_timing(self):
+        mean = self.avrgTime
+        return sum(((t - mean)**2 for t in self._timing_list))
+
+    def _calc_pstdev_time(self):
+        n = len(self._timing_list)
+        pvar = self._calc_sum_square_timing() / n
+        return pvar**0.5
+
 
 # Used as 'global' variale so we can print
 # stats when exiting by signal
-myStats = MStats
+myStats = MStats2()
 
 
 def _checksum(source_string):
@@ -168,12 +274,9 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
                   )
 
         if myStats is not None:
+            assert isinstance(myStats, MStats2)
             myStats.pktsRcvd += 1
-            myStats.totTime += delay
-            if myStats.minTime > delay:
-                myStats.minTime = delay
-            if myStats.maxTime < delay:
-                myStats.maxTime = delay
+            myStats.record_time(delay)
     else:
         delay = None
         if verbose:
@@ -298,16 +401,15 @@ def _dump_stats(myStats):
     """
     print("\n----%s PYTHON PING Statistics----" % (myStats.thisIP))
 
-    if myStats.pktsSent > 0:
-        myStats.fracLoss = (myStats.pktsSent - myStats.pktsRcvd) / \
-            myStats.pktsSent
-
     print("%d packets transmitted, %d packets received, %0.1f%% packet loss"
           % (myStats.pktsSent, myStats.pktsRcvd, 100.0 * myStats.fracLoss))
 
     if myStats.pktsRcvd > 0:
         print("round-trip (ms)  min/avg/max = %0.1f/%0.1f/%0.1f" % (
             myStats.minTime, myStats.totTime/myStats.pktsRcvd, myStats.maxTime
+        ))
+        print('                 median/pstddev = %0.2f/%0.2f' % (
+            myStats.median_time, myStats.pstdev_time
         ))
 
     print('')
@@ -353,7 +455,7 @@ def verbose_ping(hostname, timeout=3000, count=3,
     if hasattr(signal, "SIGBREAK"):  # Handle Ctrl-Break /Windows/
         signal.signal(signal.SIGBREAK, _signal_handler)
 
-    myStats = MStats()  # Reset the stats
+    myStats = MStats2()  # Reset the stats
     mySeqNumber = 0  # Starting value
 
     try:
@@ -398,10 +500,10 @@ def verbose_ping(hostname, timeout=3000, count=3,
     yield not myStats.pktsRcvd
 
 
-def quiet_ping(hostname, timeout=3000, count=3,
+def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
                numDataBytes=64, path_finder=False, ipv6=False):
     """ Same as verbose_ping, but the results are yielded as a tuple """
-    myStats = MStats()  # Reset the stats
+    myStats = MStats2()  # Reset the stats
     mySeqNumber = 0  # Starting value
 
     try:
@@ -419,7 +521,7 @@ def quiet_ping(hostname, timeout=3000, count=3,
     # starts actually pinging. This is needed in big MAN/LAN networks where
     # you sometimes loose the first packet. (while the switches find the way)
     if path_finder:
-        fakeStats = MStats()
+        fakeStats = MStats2()
         single_ping(fakeStats, destIP, hostname, timeout,
                     mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False)[0]
         time.sleep(0.5)
@@ -446,15 +548,13 @@ def quiet_ping(hostname, timeout=3000, count=3,
         elif count is not None:
             yield myStats.pktsSent
 
-    if myStats.pktsSent > 0:
-        myStats.fracLoss = (myStats.pktsSent - myStats.pktsRcvd) / \
-            myStats.pktsSent
-
-    if myStats.pktsRcvd > 0:
-        myStats.avrgTime = myStats.totTime / myStats.pktsRcvd
-
-    # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost)
-    yield myStats.maxTime, myStats.minTime, myStats.avrgTime, myStats.fracLoss
+    if advanced_statistics:
+        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost, median, pop.std.dev)
+        yield myStats.maxTime, myStats.minTime, myStats.avrgTime, myStats.fracLoss,\
+              myStats.median_time, myStats.pstdev_time
+    else:
+        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost)
+        yield myStats.maxTime, myStats.minTime, myStats.avrgTime, myStats.fracLoss
 
 
 if __name__ == '__main__':
