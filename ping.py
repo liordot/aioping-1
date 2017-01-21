@@ -461,7 +461,7 @@ def _signal_handler(signum, frame):
 
 def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
                    ipv6=None, sourceIP=None):
-    single_ping(MStats2(), destIP, hostname, timeout,
+    single_ping(destIP, hostname, timeout,
                 mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False, sourceIP=sourceIP)
     time.sleep(0.5)
 
