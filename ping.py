@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import division
+
 """
     A pure python ping implementation using raw sockets.
 
@@ -63,70 +65,93 @@ ICMP_MAX_RECV = 2048  # Max size of incoming buffer
 MAX_SLEEP = 1000
 
 
+# noinspection PyAttributeOutsideInit
 class MStats2(object):
 
     def __init__(self):
-        self._timing_list = []  # type: list[int]
-        self._thisIP = '0.0.0.0'
-        self.pktsSent = 0
-        self.pktsRcvd = 0
+        self._this_ip = '0.0.0.0'
+        self.reset()
 
-        self._minTime = None
-        self._maxTime = None
-        self._totTime = None
-        self._avrgTime = None
-        self._fracLoss = None
+    def reset(self):
+        self._timing_list = []
+        self._packets_sent = 0
+        self._packets_rcvd = 0
+
+        self._min_time = None
+        self._max_time = None
+        self._total_time = None
+        self._mean_time = None
+        self._frac_loss = None
 
         self._median_time = None
         self._pstdev_time = None
 
     @property
-    def timings(self):
-        for t in self._timing_list:
-            yield t
-
-    @property
     def thisIP(self):
-        return self._thisIP
+        return self._this_ip
 
     @thisIP.setter
     def thisIP(self, value):
-        self._thisIP = value
+        self._this_ip = value
+
+    @property
+    def pktsSent(self):
+        return self._packets_sent
+
+    @property
+    def pktsRcvd(self):
+        return self._packets_rcvd
+
+    @property
+    def pktsLost(self):
+        return self._packets_sent - self._packets_rcvd
 
     @property
     def minTime(self):
-        return self._minTime
+        return self._min_time
 
     @minTime.setter
     def minTime(self, value):
-        if self._minTime is None:
-            self._minTime = value
-        elif value < self._minTime:
-            self._minTime = value
+        """
+        WARNING: THIS SETTER IS OVERLOADED! Instead of setting the value directly, it changes the internal
+        property *if and only if* the new value is smaller. Similarly, maxTime also overloads the setter.
+        """
+        if self._min_time is None:
+            self._min_time = value
+        elif value < self._min_time:
+            self._min_time = value
 
     @property
     def maxTime(self):
-        return self._maxTime
+        return self._max_time
 
     @maxTime.setter
     def maxTime(self, value):
-        if self._maxTime is None:
-            self._maxTime = value
-        elif value > self._maxTime:
-            self._maxTime = value
+        """
+        WARNING: THIS SETTER IS OVERLOADED! Instead of setting the value directly, it changes the internal
+        property *if and only if* the new value is larger. Similarly, minTime also overloads the setter.
+        """
+        if self._max_time is None:
+            self._max_time = value
+        elif value > self._max_time:
+            self._max_time = value
 
     @property
     def totTime(self):
-        if self._totTime is None:
-            self._totTime = sum(self._timing_list)
-        return self._totTime
+        if self._total_time is None:
+            self._total_time = sum(self._timing_list)
+        return self._total_time
 
     @property
     def avrgTime(self):
-        if self._avrgTime is None:
+        return self.mean_time
+
+    @property
+    def mean_time(self):
+        if self._mean_time is None:
             if len(self._timing_list) > 0:
-                self._avrgTime = self.totTime / len(self._timing_list)
-        return self._avrgTime
+                self._mean_time = self.totTime / len(self._timing_list)
+        return self._mean_time
 
     @property
     def median_time(self):
@@ -136,46 +161,52 @@ class MStats2(object):
 
     @property
     def pstdev_time(self):
+        """Returns the 'Population Standard Deviation' of the set."""
         if self._pstdev_time is None:
             self._pstdev_time = self._calc_pstdev_time()
         return self._pstdev_time
 
     @property
     def fracLoss(self):
-        if self._fracLoss is None:
+        if self._frac_loss is None:
             if self.pktsSent > 0:
-                self._fracLoss = (self.pktsSent - self.pktsRcvd) / self.pktsSent
-        return self._fracLoss
+                self._frac_loss = self.pktsLost / self.pktsSent
+        return self._frac_loss
+
+    def packet_sent(self, n=1):
+        self._packets_sent += n
+
+    def packet_received(self, n=1):
+        self._packets_rcvd += n
 
     def record_time(self, value):
         self._timing_list.append(value)
-        self.minTime = value
-        self.maxTime = value
+        self.minTime = value  # OVERLOADED! See docstring
+        self.maxTime = value  # OVERLOADED! See docstring
         self._reset_statistics()
 
     def _reset_statistics(self):
-        self._totTime = None
-        self._avrgTime = None
+        self._total_time = None
+        self._mean_time = None
         self._median_time = None
         self._pstdev_time = None
 
     def _calc_median_time(self):
-        tlist_len = len(self._timing_list)
-        if tlist_len == 0:
+        n = len(self._timing_list)
+        if n == 0:
             return None
-        if tlist_len & 1 == 1:
-            return sorted(self._timing_list)[tlist_len//2]
-        else:
-            halfl = tlist_len // 2
-            return sum(sorted(self._timing_list)[halfl:halfl+2]) / 2
+        if n & 1 == 1:  # Odd number of samples? Return the middle.
+            return sorted(self._timing_list)[n//2]
+        else:  # Even number of samples? Return the mean of the two middle samples.
+            halfn = n // 2
+            return sum(sorted(self._timing_list)[halfn:halfn+2]) / 2
 
-    def _calc_sum_square_timing(self):
-        mean = self.avrgTime
+    def _calc_sum_square_time(self):
+        mean = self.mean_time
         return sum(((t - mean)**2 for t in self._timing_list))
 
     def _calc_pstdev_time(self):
-        n = len(self._timing_list)
-        pvar = self._calc_sum_square_timing() / n
+        pvar = self._calc_sum_square_time() / len(self._timing_list)
         return pvar**0.5
 
 
@@ -253,7 +284,7 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
         return delay, (None,)
 
     if myStats is not None:
-        myStats.pktsSent += 1
+        myStats.packet_sent()
 
     recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL \
         = _receive(mySocket, my_ID, timeout, ipv6)
@@ -279,7 +310,7 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
 
         if myStats is not None:
             assert isinstance(myStats, MStats2)
-            myStats.pktsRcvd += 1
+            myStats.packet_received()
             myStats.record_time(delay)
     else:
         delay = None
@@ -410,7 +441,7 @@ def _dump_stats(myStats):
 
     if myStats.pktsRcvd > 0:
         print("round-trip (ms)  min/avg/max = %0.1f/%0.1f/%0.1f" % (
-            myStats.minTime, myStats.totTime/myStats.pktsRcvd, myStats.maxTime
+            myStats.minTime, myStats.avrgTime, myStats.maxTime
         ))
         print('                 median/pstddev = %0.2f/%0.2f' % (
             myStats.median_time, myStats.pstdev_time
@@ -426,6 +457,13 @@ def _signal_handler(signum, frame):
     _dump_stats(myStats)
     print("\n(Terminated with signal %d)\n" % (signum))
     sys.exit(0)
+
+
+def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
+                   ipv6=None, sourceIP=None):
+    single_ping(MStats2(), destIP, hostname, timeout,
+                mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False, sourceIP=sourceIP)
+    time.sleep(0.5)
 
 
 def verbose_ping(hostname, timeout=3000, count=3,
@@ -477,12 +515,18 @@ def verbose_ping(hostname, timeout=3000, count=3,
 
     myStats.thisIP = destIP
 
+    # This will send packet that we don't care about 0.5 seconds before it
+    # starts actually pinging. This is needed in big MAN/LAN networks where
+    # you sometimes loose the first packet. (while the switches find the way)
+    if path_finder:
+        _pathfind_ping(destIP, hostname, timeout,
+                       mySeqNumber, numDataBytes, ipv6=ipv6, sourceIP=sourceIP)
+
     i = 0
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
-                            numDataBytes, ipv6=ipv6, myStats=myStats, sourceIP=sourceIP)[0]
-        if delay is None:
-            delay = 0
+                            numDataBytes, ipv6=ipv6, myStats=myStats, sourceIP=sourceIP)
+        delay = 0 if delay is None else delay[0]
 
         mySeqNumber += 1
 
@@ -518,6 +562,7 @@ def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
             destIP = socket.gethostbyname(hostname)
     except socket.gaierror:
         yield False
+        return
 
     myStats.thisIP = destIP
 
@@ -525,19 +570,15 @@ def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
     # starts actually pinging. This is needed in big MAN/LAN networks where
     # you sometimes loose the first packet. (while the switches find the way)
     if path_finder:
-        fakeStats = MStats2()
-        single_ping(fakeStats, destIP, hostname, timeout,
-                    mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False, sourceIP=sourceIP)
-        time.sleep(0.5)
+        _pathfind_ping(destIP, hostname, timeout,
+                       mySeqNumber, numDataBytes, ipv6=ipv6, sourceIP=sourceIP)
 
     i = 1
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
                             numDataBytes, ipv6=ipv6, myStats=myStats,
                             verbose=False, sourceIP=sourceIP)
-
-        if delay is None:
-            delay = 0
+        delay = 0 if delay is None else delay[0]
 
         mySeqNumber += 1
         # Pause for the remainder of the MAX_SLEEP period (if applicable)
