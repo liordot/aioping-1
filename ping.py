@@ -65,7 +65,6 @@ ICMP_MAX_RECV = 2048  # Max size of incoming buffer
 MAX_SLEEP = 1000
 
 
-# noinspection PyAttributeOutsideInit
 class MStats2(object):
 
     def __init__(self):
