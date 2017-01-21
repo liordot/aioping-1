@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import division
+from __future__ import division, print_function
 
 """
     A pure python ping implementation using raw sockets.
@@ -519,8 +519,10 @@ def verbose_ping(hostname, timeout=3000, count=3,
     # starts actually pinging. This is needed in big MAN/LAN networks where
     # you sometimes loose the first packet. (while the switches find the way)
     if path_finder:
+        print("PYTHON PING %s (%s): Sending pathfinder ping" % (hostname, destIP))
         _pathfind_ping(destIP, hostname, timeout,
                        mySeqNumber, numDataBytes, ipv6=ipv6, sourceIP=sourceIP)
+        print()
 
     i = 0
     while 1:
