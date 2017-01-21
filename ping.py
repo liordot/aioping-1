@@ -104,7 +104,7 @@ def _checksum(source_string):
 
 
 def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
-                myStats=None, ipv6=False, verbose=True):
+                myStats=None, ipv6=False, verbose=True, sourceIP=None):
     """
     Returns either the delay (in ms) or None on timeout.
     """
@@ -114,6 +114,8 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
         try:  # One could use UDP here, but it's obscure
             mySocket = socket.socket(socket.AF_INET6, socket.SOCK_RAW,
                                      socket.getprotobyname("ipv6-icmp"))
+            if sourceIP is not None:
+                mySocket.bind((sourceIP, 0))
             mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         except OSError as e:
             if verbose:
@@ -126,6 +128,8 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
         try:  # One could use UDP here, but it's obscure
             mySocket = socket.socket(socket.AF_INET, socket.SOCK_RAW,
                                      socket.getprotobyname("icmp"))
+            if sourceIP is not None:
+                mySocket.bind((sourceIP, 0))
             mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         except OSError as e:
             if verbose:
@@ -323,7 +327,7 @@ def _signal_handler(signum, frame):
 
 
 def verbose_ping(hostname, timeout=3000, count=3,
-                 numDataBytes=64, path_finder=False, ipv6=False):
+                 numDataBytes=64, path_finder=False, ipv6=False, sourceIP=None):
     """
     Send >count< ping to >destIP< with the given >timeout< and display
     the result.
@@ -374,7 +378,7 @@ def verbose_ping(hostname, timeout=3000, count=3,
     i = 0
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
-                            numDataBytes, ipv6=ipv6, myStats=myStats)[0]
+                            numDataBytes, ipv6=ipv6, myStats=myStats, sourceIP=sourceIP)[0]
         if delay is None:
             delay = 0
 
@@ -399,7 +403,7 @@ def verbose_ping(hostname, timeout=3000, count=3,
 
 
 def quiet_ping(hostname, timeout=3000, count=3,
-               numDataBytes=64, path_finder=False, ipv6=False):
+               numDataBytes=64, path_finder=False, ipv6=False, sourceIP=None):
     """ Same as verbose_ping, but the results are yielded as a tuple """
     myStats = MStats()  # Reset the stats
     mySeqNumber = 0  # Starting value
@@ -421,14 +425,14 @@ def quiet_ping(hostname, timeout=3000, count=3,
     if path_finder:
         fakeStats = MStats()
         single_ping(fakeStats, destIP, hostname, timeout,
-                    mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False)[0]
+                    mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False, sourceIP=sourceIP)
         time.sleep(0.5)
 
     i = 1
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
                             numDataBytes, ipv6=ipv6, myStats=myStats,
-                            verbose=False)
+                            verbose=False, sourceIP=sourceIP)
 
         if delay is None:
             delay = 0
@@ -515,14 +519,17 @@ if __name__ == '__main__':
     parser.add_argument('-T', '--test_case', action='store_true', help='Flag \
                         to run the default test case suite.')
 
+    parser.add_argument('-S', '--source_address', help='Source address from which \
+                        ICMP Echo packets will be sent.')
+
     parsed = parser.parse_args()
 
     if parsed.infinite:
         sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
                                    None, parsed.packet_size,
-                                   ipv6=parsed.ipv6))[:-1])
+                                   ipv6=parsed.ipv6, sourceIP=parsed.source_address))[:-1])
 
     else:
         sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
                                    parsed.request_count, parsed.packet_size,
-                                   ipv6=parsed.ipv6))[:-1])
+                                   ipv6=parsed.ipv6, sourceIP=parsed.source_address))[:-1])
