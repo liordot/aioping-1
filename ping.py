@@ -77,14 +77,7 @@ class MStats2(object):
         self._packets_sent = 0
         self._packets_rcvd = 0
 
-        self._min_time = None
-        self._max_time = None
-        self._total_time = None
-        self._mean_time = None
-        self._frac_loss = None
-
-        self._median_time = None
-        self._pstdev_time = None
+        self._reset_statistics()
 
     @property
     def thisIP(self):
@@ -108,33 +101,11 @@ class MStats2(object):
 
     @property
     def minTime(self):
-        return self._min_time
-
-    @minTime.setter
-    def minTime(self, value):
-        """
-        WARNING: THIS SETTER IS OVERLOADED! Instead of setting the value directly, it changes the internal
-        property *if and only if* the new value is smaller. Similarly, maxTime also overloads the setter.
-        """
-        if self._min_time is None:
-            self._min_time = value
-        elif value < self._min_time:
-            self._min_time = value
+        return min(self._timing_list) if self._timing_list else None
 
     @property
     def maxTime(self):
-        return self._max_time
-
-    @maxTime.setter
-    def maxTime(self, value):
-        """
-        WARNING: THIS SETTER IS OVERLOADED! Instead of setting the value directly, it changes the internal
-        property *if and only if* the new value is larger. Similarly, minTime also overloads the setter.
-        """
-        if self._max_time is None:
-            self._max_time = value
-        elif value > self._max_time:
-            self._max_time = value
+        return max(self._timing_list) if self._timing_list else None
 
     @property
     def totTime(self):
@@ -142,16 +113,13 @@ class MStats2(object):
             self._total_time = sum(self._timing_list)
         return self._total_time
 
-    @property
-    def avrgTime(self):
-        return self.mean_time
-
-    @property
-    def mean_time(self):
+    def _get_mean_time(self):
         if self._mean_time is None:
             if len(self._timing_list) > 0:
                 self._mean_time = self.totTime / len(self._timing_list)
         return self._mean_time
+    mean_time = property(_get_mean_time)
+    avrgTime = property(_get_mean_time)
 
     @property
     def median_time(self):
@@ -181,8 +149,6 @@ class MStats2(object):
 
     def record_time(self, value):
         self._timing_list.append(value)
-        self.minTime = value  # OVERLOADED! See docstring
-        self.maxTime = value  # OVERLOADED! See docstring
         self._reset_statistics()
 
     def _reset_statistics(self):
@@ -190,6 +156,7 @@ class MStats2(object):
         self._mean_time = None
         self._median_time = None
         self._pstdev_time = None
+        self._frac_loss = None
 
     def _calc_median_time(self):
         n = len(self._timing_list)
