@@ -1,12 +1,11 @@
-import argparse
 import io
 import os
 import platform
-import smtplib
 import subprocess
 import sys
 import time
 import unittest
+
 
 def output_system_info(log):
     pipe = subprocess.PIPE
@@ -15,7 +14,7 @@ def output_system_info(log):
     stdout, stderr = p.communicate()
     p.kill()
 
-    print(item for item in [
+    log.writelines(item for item in [
         '%s\n' % time.asctime(),
         'os.name: %s\n' % os.name,
         'platform.system: %s\n' % platform.system(),
@@ -27,7 +26,8 @@ def output_system_info(log):
 
 def run_tests(log, v=2):
     loader = unittest.TestLoader()
-    tests = loader.loadTestsFromName('builder')
+    tests = loader.discover('tests')
+    # tests = loader.loadTestsFromName('builder')
     runner = unittest.TextTestRunner(stream=log, buffer=True, verbosity=v)
     runner.run(tests)
 
