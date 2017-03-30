@@ -371,11 +371,20 @@ def _receive(mySocket, myID, timeout, ipv6=False):
 
         recPacket, addr = mySocket.recvfrom(ICMP_MAX_RECV)
 
-        ipHeader = recPacket[:20]
-
-        iphVersion, iphTypeOfSvc, iphLength, iphID, iphFlags, iphTTL, \
-            iphProtocol, iphChecksum, iphSrcIP, iphDestIP = struct.unpack(
-                "!BBHHHBBHII", ipHeader)
+        
+        iphSrcIP = 0
+        iphDestIP = 0
+        if ipv6:
+            ipHeader = recPacket[:8]
+            iphVersion, iphTypeOfSvc, iphLength, iphTTL, \
+                 = struct.unpack(
+                    "!BBxxHxB", ipHeader)
+            print("lenght: " + str(iphLength) + " ttl: " + str(iphTTL))
+        else:
+            ipHeader = recPacket[:20]
+            iphVersion, iphTypeOfSvc, iphLength, iphID, iphFlags, iphTTL, \
+                iphProtocol, iphChecksum, iphSrcIP, iphDestIP = struct.unpack(
+                    "!BBHHHBBHII", ipHeader)
 
         if ipv6:
             icmpHeader = recPacket[0:8]
