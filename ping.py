@@ -342,7 +342,7 @@ def _send(mySocket, destIP, myID, mySeqNumber, numDataBytes, ipv6=False,
     sendTime = default_timer()
 
     try:
-        mySocket.sendto(packet, (destIP, 1))  # Port number is irrelevant
+        mySocket.sendto(packet, (destIP, 58))  # Port number is irrelevant
     except OSError as e:
         if verbose:
             print("General failure (%s)" % str(e))
