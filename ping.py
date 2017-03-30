@@ -220,6 +220,7 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
             if sourceIP is not None:
                 mySocket.bind((sourceIP, 0))
             mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            mySocket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVHOPLIMIT, 1)
         except OSError as e:
             if verbose:
                 print("failed. (socket error: '%s')" % str(e))
@@ -369,18 +370,20 @@ def _receive(mySocket, myID, timeout, ipv6=False):
 
         timeReceived = default_timer()
 
-        recPacket, addr = mySocket.recvfrom(ICMP_MAX_RECV)
-
         
         iphSrcIP = 0
         iphDestIP = 0
         if ipv6:
-            ipHeader = recPacket[:8]
-            iphVersion, iphTypeOfSvc, iphLength, iphTTL, \
-                 = struct.unpack(
-                    "!BBxxHxB", ipHeader)
-            print("lenght: " + str(iphLength) + " ttl: " + str(iphTTL))
+            recPacket, ancdata, flags, addr = mySocket.recvmsg(ICMP_MAX_RECV)
+            iphTTL = 0
+            if len(ancdata) == 1:
+                cmsg_level, cmsg_type, cmsg_data = ancdata[0]
+                a = array.array("i")
+                a.frombytes(cmsg_data)
+                iphTTL = a[0]
+            print("ttl: " + str(iphTTL))
         else:
+            recPacket, addr = mySocket.recvfrom(ICMP_MAX_RECV)
             ipHeader = recPacket[:20]
             iphVersion, iphTypeOfSvc, iphLength, iphID, iphFlags, iphTTL, \
                 iphProtocol, iphChecksum, iphSrcIP, iphDestIP = struct.unpack(
