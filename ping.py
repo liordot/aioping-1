@@ -564,7 +564,7 @@ def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
                             numDataBytes, ipv6=ipv6, myStats=myStats,
                             verbose=False, sourceIP=sourceIP)
-        delay = 0 if delay is None else delay[0]
+        delay = 0 if delay[0] is None else delay[0]
 
         mySeqNumber += 1
         # Pause for the remainder of the MAX_SLEEP period (if applicable)
@@ -580,7 +580,8 @@ def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
             yield myStats.pktsSent
 
     if advanced_statistics:
-        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost, median, pop.std.dev)
+        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost,
+        # median, pop.std.dev)
         yield myStats.maxTime, myStats.minTime, myStats.avrgTime,
         myStats.fracLoss, myStats.median_time, myStats.pstdev_time
     else:
