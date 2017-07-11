@@ -45,7 +45,8 @@ if __name__ == '__main__':
 try:
     from _thread import get_ident
 except ImportError:
-    def get_ident(): return 0
+    def get_ident():
+        return 0
 
 if sys.platform == "win32":
     # On Windows, the best timer is time.clock()
@@ -162,10 +163,11 @@ class MStats2(object):
         if n == 0:
             return None
         if n & 1 == 1:  # Odd number of samples? Return the middle.
-            return sorted(self._timing_list)[n//2]
-        else:  # Even number of samples? Return the mean of the two middle samples.
+            return sorted(self._timing_list)[n // 2]
+        # Even number of samples? Return the mean of the two middle samples.
+        else:
             halfn = n // 2
-            return sum(sorted(self._timing_list)[halfn:halfn+2]) / 2
+            return sum(sorted(self._timing_list)[halfn:halfn + 2]) / 2
 
     def _calc_sum_square_time(self):
         mean = self.mean_time
@@ -220,7 +222,8 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
             if sourceIP is not None:
                 mySocket.bind((sourceIP, 0))
             mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            mySocket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVHOPLIMIT, 1)
+            mySocket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVHOPLIMIT,
+                                1)
         except OSError as e:
             if verbose:
                 print("failed. (socket error: '%s')" % str(e))
@@ -259,7 +262,7 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
     mySocket.close()
 
     if recvTime:
-        delay = (recvTime-sentTime)*1000
+        delay = (recvTime - sentTime) * 1000
         if ipv6:
             host_addr = hostname
         else:
@@ -359,7 +362,7 @@ def _receive(mySocket, myID, timeout, ipv6=False):
     """
     Receive the ping from the socket. Timeout = in ms
     """
-    timeLeft = timeout/1000
+    timeLeft = timeout / 1000
 
     while True:  # Loop while waiting for packet or timeout
         startedSelect = default_timer()
@@ -370,7 +373,6 @@ def _receive(mySocket, myID, timeout, ipv6=False):
 
         timeReceived = default_timer()
 
-        
         iphSrcIP = 0
         iphDestIP = 0
         if ipv6:
@@ -440,12 +442,14 @@ def _signal_handler(signum, frame):
 def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
                    ipv6=None, sourceIP=None):
     single_ping(destIP, hostname, timeout,
-                mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False, sourceIP=sourceIP)
+                mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False,
+                sourceIP=sourceIP)
     time.sleep(0.5)
 
 
 def verbose_ping(hostname, timeout=3000, count=3,
-                 numDataBytes=64, path_finder=False, ipv6=False, sourceIP=None):
+                 numDataBytes=64, path_finder=False, ipv6=False,
+                 sourceIP=None):
     """
     Send >count< ping to >destIP< with the given >timeout< and display
     the result.
@@ -497,7 +501,8 @@ def verbose_ping(hostname, timeout=3000, count=3,
     # starts actually pinging. This is needed in big MAN/LAN networks where
     # you sometimes loose the first packet. (while the switches find the way)
     if path_finder:
-        print("PYTHON PING %s (%s): Sending pathfinder ping" % (hostname, destIP))
+        print("PYTHON PING %s (%s): Sending pathfinder ping" %
+              (hostname, destIP))
         _pathfind_ping(destIP, hostname, timeout,
                        mySeqNumber, numDataBytes, ipv6=ipv6, sourceIP=sourceIP)
         print()
@@ -505,14 +510,15 @@ def verbose_ping(hostname, timeout=3000, count=3,
     i = 0
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
-                            numDataBytes, ipv6=ipv6, myStats=myStats, sourceIP=sourceIP)
+                            numDataBytes, ipv6=ipv6, myStats=myStats,
+                            sourceIP=sourceIP)
         delay = 0 if delay is None else delay[0]
 
         mySeqNumber += 1
 
         # Pause for the remainder of the MAX_SLEEP period (if applicable)
         if (MAX_SLEEP > delay):
-            time.sleep((MAX_SLEEP - delay)/1000)
+            time.sleep((MAX_SLEEP - delay) / 1000)
 
         if count is not None and i < count:
             i += 1
@@ -558,7 +564,7 @@ def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
                             numDataBytes, ipv6=ipv6, myStats=myStats,
                             verbose=False, sourceIP=sourceIP)
-        delay = 0 if delay is None else delay[0]
+        delay = 0 if delay[0] is None else delay[0]
 
         mySeqNumber += 1
         # Pause for the remainder of the MAX_SLEEP period (if applicable)
@@ -574,12 +580,14 @@ def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
             yield myStats.pktsSent
 
     if advanced_statistics:
-        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost, median, pop.std.dev)
-        yield myStats.maxTime, myStats.minTime, myStats.avrgTime, myStats.fracLoss,\
-              myStats.median_time, myStats.pstdev_time
+        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost,
+        # median, pop.std.dev)
+        yield myStats.maxTime, myStats.minTime, myStats.avrgTime,
+        myStats.fracLoss, myStats.median_time, myStats.pstdev_time
     else:
         # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost)
-        yield myStats.maxTime, myStats.minTime, myStats.avrgTime, myStats.fracLoss
+        yield myStats.maxTime, myStats.minTime, myStats.avrgTime,
+        myStats.fracLoss
 
 
 if __name__ == '__main__':
@@ -648,9 +656,11 @@ if __name__ == '__main__':
     if parsed.infinite:
         sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
                                    None, parsed.packet_size,
-                                   ipv6=parsed.ipv6, sourceIP=parsed.source_address))[:-1])
+                                   ipv6=parsed.ipv6,
+                                   sourceIP=parsed.source_address))[:-1])
 
     else:
         sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
                                    parsed.request_count, parsed.packet_size,
-                                   ipv6=parsed.ipv6, sourceIP=parsed.source_address))[:-1])
+                                   ipv6=parsed.ipv6,
+                                   sourceIP=parsed.source_address))[:-1])
