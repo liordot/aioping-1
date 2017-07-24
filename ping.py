@@ -220,15 +220,13 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
         if ipv6:
             mySocket = socket.socket(socket.AF_INET6, socket.SOCK_RAW,
                                      socket.getprotobyname("ipv6-icmp"))
-            if sourceIP is not None:
-                mySocket.bind((sourceIP, 0))
             mySocket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVHOPLIMIT,
                                 1)
         else:
             mySocket = socket.socket(socket.AF_INET, socket.SOCK_RAW,
                                      socket.getprotobyname("icmp"))
-            if sourceIP is not None:
-                mySocket.bind((sourceIP, 0))
+        if sourceIP is not None:
+            mySocket.bind((sourceIP, 0))
 
     except OSError as e:
         if verbose:
