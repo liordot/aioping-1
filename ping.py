@@ -209,7 +209,8 @@ def _checksum(source_string):
 
 
 def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
-                myStats=None, ipv6=False, verbose=True, sourceIP=None):
+                myStats=None, ipv6=False, verbose=True, sourceIP=None,
+                sourceIntf=None):
     """
     Returns either the delay (in ms) or None on timeout.
     """
@@ -244,6 +245,13 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
                 print('Note that python-ping uses RAW sockets'
                       'and requires root rights.')
             raise  # raise the original error
+
+    if sourceIntf is not None:
+        try:
+            SO_BINDTODEVICE = socket.SO_BINDTODEVICE
+        except AttributeError:
+            SO_BINDTODEVICE = 25
+        mySocket.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE, (sourceIntf + '\0').encode('utf-8'))
 
     my_ID = (os.getpid() ^ get_ident()) & 0xFFFF
 
@@ -440,16 +448,15 @@ def _signal_handler(signum, frame):
 
 
 def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
-                   ipv6=None, sourceIP=None):
-    single_ping(destIP, hostname, timeout,
-                mySeqNumber, numDataBytes, ipv6=ipv6, verbose=False,
-                sourceIP=sourceIP)
+                   **kw):
+    single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
+                verbose=False, **kw)
     time.sleep(0.5)
 
 
 def verbose_ping(hostname, timeout=3000, count=3,
                  numDataBytes=64, path_finder=False, ipv6=False,
-                 sourceIP=None):
+                 **kw):
     """
     Send >count< ping to >destIP< with the given >timeout< and display
     the result.
@@ -504,14 +511,14 @@ def verbose_ping(hostname, timeout=3000, count=3,
         print("PYTHON PING %s (%s): Sending pathfinder ping" %
               (hostname, destIP))
         _pathfind_ping(destIP, hostname, timeout,
-                       mySeqNumber, numDataBytes, ipv6=ipv6, sourceIP=sourceIP)
+                       mySeqNumber, numDataBytes, ipv6=ipv6, **kw)
         print()
 
     i = 0
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
                             numDataBytes, ipv6=ipv6, myStats=myStats,
-                            sourceIP=sourceIP)
+                            **kw)
         delay = 0 if delay is None or delay[0] is None else delay[0]
 
         mySeqNumber += 1
@@ -535,7 +542,7 @@ def verbose_ping(hostname, timeout=3000, count=3,
 
 
 def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
-               numDataBytes=64, path_finder=False, ipv6=False, sourceIP=None):
+               numDataBytes=64, path_finder=False, ipv6=False, **kw):
     """ Same as verbose_ping, but the results are yielded as a tuple """
     myStats = MStats2()  # Reset the stats
     mySeqNumber = 0  # Starting value
@@ -557,13 +564,13 @@ def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
     # you sometimes loose the first packet. (while the switches find the way)
     if path_finder:
         _pathfind_ping(destIP, hostname, timeout,
-                       mySeqNumber, numDataBytes, ipv6=ipv6, sourceIP=sourceIP)
+                       mySeqNumber, numDataBytes, ipv6=ipv6, **kw)
 
     i = 1
     while 1:
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
                             numDataBytes, ipv6=ipv6, myStats=myStats,
-                            verbose=False, sourceIP=sourceIP)
+                            verbose=False, **kw)
         delay = 0 if delay[0] is None else delay[0]
 
         mySeqNumber += 1
@@ -642,6 +649,9 @@ if __name__ == '__main__':
     parser.add_argument('-I', '--ipv6', action='store_true', help='Flag to \
                         use IPv6.')
 
+    parser.add_argument('-B', '--interface', action='store', help='Interface \
+                        to use.')
+
     parser.add_argument('-s', '--packet_size', type=int, help='Designate the\
                         amount of data to send per packet.', default=64)
 
@@ -657,10 +667,12 @@ if __name__ == '__main__':
         sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
                                    None, parsed.packet_size,
                                    ipv6=parsed.ipv6,
-                                   sourceIP=parsed.source_address))[:-1])
+                                   sourceIP=parsed.source_address,
+                                   sourceIntf=parsed.interface))[:-1])
 
     else:
         sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
                                    parsed.request_count, parsed.packet_size,
                                    ipv6=parsed.ipv6,
-                                   sourceIP=parsed.source_address))[:-1])
+                                   sourceIP=parsed.source_address,
+                                   sourceIntf=parsed.interface))[:-1])
