@@ -380,7 +380,6 @@ def _receive(mySocket, myID, timeout, ipv6=False):
                 a = array.array("i")
                 a.frombytes(cmsg_data)
                 iphTTL = a[0]
-            print("ttl: " + str(iphTTL))
         else:
             recPacket, addr = mySocket.recvfrom(ICMP_MAX_RECV)
             ipHeader = recPacket[:20]
