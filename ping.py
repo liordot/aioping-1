@@ -490,11 +490,24 @@ def verbose_ping(hostname, timeout=3000, count=3,
     mySeqNumber = 0  # Starting value
 
     try:
-        if ipv6:
-            info = socket.getaddrinfo(hostname, None)[0]
+        for info in socket.getaddrinfo(hostname, None):
+            if info[0] == socket.AF_INET6:
+                if ipv6 is False:
+                    continue
+                ipv6 = True
+            elif info[0] == socket.AF_INET:
+                if ipv6 is True:
+                    continue
+                ipv6 = False
+            else:
+                continue
             destIP = info[4][0]
+            break
         else:
-            destIP = socket.gethostbyname(hostname)
+            print("\nPYTHON PING: No address for host: %s" % (hostname,))
+            print('')
+            return
+            
         print("\nPYTHON PING %s (%s): %d data bytes" % (hostname, destIP,
                                                         numDataBytes))
     except socket.gaierror as e:
@@ -646,10 +659,12 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--infinite', help='Flag to continuously ping \
                         a host until stopped.', action='store_true')
 
-    parser.add_argument('-I', '--ipv6', action='store_true', help='Flag to \
-                        use IPv6.')
+    parser.add_argument('-4', '--ipv4', action='store_const', const=False,
+                        dest='ipv6', help='Flag to use IPv4.')
+    parser.add_argument('-6', '--ipv6', action='store_const', const=True,
+                        dest='ipv6', help='Flag to use IPv6.')
 
-    parser.add_argument('-B', '--interface', action='store', help='Interface \
+    parser.add_argument('-I', '--interface', action='store', help='Interface \
                         to use.')
 
     parser.add_argument('-s', '--packet_size', type=int, help='Designate the\
