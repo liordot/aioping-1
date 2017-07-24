@@ -512,7 +512,7 @@ def verbose_ping(hostname, timeout=3000, count=3,
         delay = single_ping(destIP, hostname, timeout, mySeqNumber,
                             numDataBytes, ipv6=ipv6, myStats=myStats,
                             sourceIP=sourceIP)
-        delay = 0 if delay is None else delay[0]
+        delay = 0 if delay is None or delay[0] is None else delay[0]
 
         mySeqNumber += 1
 
