@@ -216,35 +216,27 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
     """
     delay = None
 
-    if ipv6:
-        try:  # One could use UDP here, but it's obscure
+    try:  # One could use UDP here, but it's obscure
+        if ipv6:
             mySocket = socket.socket(socket.AF_INET6, socket.SOCK_RAW,
                                      socket.getprotobyname("ipv6-icmp"))
             if sourceIP is not None:
                 mySocket.bind((sourceIP, 0))
-            mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             mySocket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVHOPLIMIT,
                                 1)
-        except OSError as e:
-            if verbose:
-                print("failed. (socket error: '%s')" % str(e))
-                print('Note that python-ping uses RAW sockets'
-                      'and requiers root rights.')
-            raise  # raise the original error
-    else:
-
-        try:  # One could use UDP here, but it's obscure
+        else:
             mySocket = socket.socket(socket.AF_INET, socket.SOCK_RAW,
                                      socket.getprotobyname("icmp"))
             if sourceIP is not None:
                 mySocket.bind((sourceIP, 0))
-            mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        except OSError as e:
-            if verbose:
-                print("failed. (socket error: '%s')" % str(e))
-                print('Note that python-ping uses RAW sockets'
-                      'and requires root rights.')
-            raise  # raise the original error
+        mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+    except OSError as e:
+        if verbose:
+            print("failed. (socket error: '%s')" % str(e))
+            print('Note that python-ping uses RAW sockets'
+                    'and requires root rights.')
+        raise  # raise the original error
 
     if sourceIntf is not None:
         try:
