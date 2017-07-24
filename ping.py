@@ -229,7 +229,6 @@ def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
                                      socket.getprotobyname("icmp"))
             if sourceIP is not None:
                 mySocket.bind((sourceIP, 0))
-        mySocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
     except OSError as e:
         if verbose:
