@@ -167,7 +167,7 @@ class MStats2(object):
         # Even number of samples? Return the mean of the two middle samples.
         else:
             halfn = n // 2
-            return sum(sorted(self._timing_list)[halfn:halfn + 2]) / 2
+            return sum(sorted(self._timing_list)[halfn - 1:halfn + 1]) / 2
 
     def _calc_sum_square_time(self):
         mean = self.mean_time
