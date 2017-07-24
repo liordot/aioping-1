@@ -13,8 +13,8 @@ A pure python ping implementation using raw sockets.
 
 {{{
 $ sudo python3 ping.py -h
-usage: python-ping [-h] [-t TIMEOUT] [-c REQUEST_COUNT] [-i] [-I]
-                   [-s PACKET_SIZE] [-T]
+usage: python-ping [-h] [-t TIMEOUT] [-c REQUEST_COUNT] [-i] [-4] [-6]
+                   [-I INTERFACE] [-s PACKET_SIZE] [-T] [-S SOURCE_ADDRESS]
                    address
 
 A pure python implementation of the ping protocol. *REQUIRES ROOT*
@@ -30,10 +30,16 @@ optional arguments:
                         The number of attempts to make. See --infinite to
                         attempt requests until stopped.
   -i, --infinite        Flag to continuously ping a host until stopped.
-  -I, --ipv6            Flag to use IPv6.
+  -4, --ipv4            Flag to use IPv4.
+  -6, --ipv6            Flag to use IPv6.
+  -I INTERFACE, --interface INTERFACE
+                        Interface to use.
   -s PACKET_SIZE, --packet_size PACKET_SIZE
                         Designate the amount of data to send per packet.
   -T, --test_case       Flag to run the default test case suite.
+  -S SOURCE_ADDRESS, --source_address SOURCE_ADDRESS
+                        Source address from which ICMP Echo packets will be
+                        sent.
 }}}
 
 
