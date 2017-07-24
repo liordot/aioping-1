@@ -395,15 +395,25 @@ def _receive(mySocket, myID, timeout, ipv6=False):
         icmpType, icmpCode, icmpChecksum, icmpPacketID, icmpSeqNumber \
             = struct.unpack("!BBHHH", icmpHeader)
 
-        # Match only the packets we care about
-        if (icmpType != 8) and (icmpPacketID == myID):
-            dataSize = len(recPacket) - 28
-            return timeReceived, (dataSize + 8), iphSrcIP, icmpSeqNumber, \
-                iphTTL
+        # We shouldn't see our own packets, but ...
+        if icmpType not in (ICMP_ECHO, ICMP_ECHO_IPV6):
+
+            # "Real" reply?
+            if icmpType in (ICMP_ECHOREPLY, ICMP_ECHO_IPV6_REPLY) and \
+                    icmpPacketID == myID:
+                dataSize = len(recPacket) - 28
+                return timeReceived, (dataSize + 8), iphSrcIP, icmpSeqNumber, \
+                    iphTTL
+
+            # TODO improve error reporting. XXX: need to re-use the
+            # socket, otherwise we won't get host-unreachable errors.
+            print("Error: type=%d code=%d" % (icmpType, icmpCode))
 
         timeLeft = timeLeft - howLongInSelect
         if timeLeft <= 0:
-            return None, 0, 0, 0, 0
+            break
+
+    return None, 0, 0, 0, 0
 
 
 def _dump_stats(myStats):
