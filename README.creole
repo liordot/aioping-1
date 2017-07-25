@@ -1,6 +1,6 @@
-== python-ping ==
-A pure python ping implementation using raw sockets.
- * Compatible with Python2 & Python3
+== aioping ==
+An asyncio-based python ping implementation using raw sockets.
+ * Compatible with Python 3.5 ff.
  * Note that ICMP messages can only be sent from processes running as root
    (in Windows, you must run this script as 'Administrator').
 
@@ -12,32 +12,32 @@ A pure python ping implementation using raw sockets.
 === Usage ===
 
 {{{
-$ sudo python3 ping.py -h
-usage: python-ping [-h] [-t TIMEOUT] [-c REQUEST_COUNT] [-i] [-4] [-6]
-                   [-I INTERFACE] [-s PACKET_SIZE] [-T] [-S SOURCE_ADDRESS]
-                   address
+usage: ping [-h] [-w TIMEOUT] [-c COUNT] [-i INTERVAL] [-4] [-6]
+            [-I SOURCEINTF] [-s NUMDATABYTES] [-T] [-S SOURCEIP]
+            hostname
 
 A pure python implementation of the ping protocol. *REQUIRES ROOT*
 
 positional arguments:
-  address               The address to attempt to ping.
+  hostname              The address to attempt to ping.
 
 optional arguments:
   -h, --help            show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                        The maximum amount of time to wait until ping timeout.
-  -c REQUEST_COUNT, --request_count REQUEST_COUNT
-                        The number of attempts to make. See --infinite to
-                        attempt requests until stopped.
-  -i, --infinite        Flag to continuously ping a host until stopped.
+  -w TIMEOUT, --deadline TIMEOUT
+                        The maximum amount of time to wait until ping times
+                        out.
+  -c COUNT, --request_count COUNT
+                        The number of attempts to make. Zero=infinite.
+  -i INTERVAL, --interval INTERVAL
+                        Time between ping attempts
   -4, --ipv4            Flag to use IPv4.
   -6, --ipv6            Flag to use IPv6.
-  -I INTERFACE, --interface INTERFACE
+  -I SOURCEINTF, --interface SOURCEINTF
                         Interface to use.
-  -s PACKET_SIZE, --packet_size PACKET_SIZE
+  -s NUMDATABYTES, --packet_size NUMDATABYTES
                         Designate the amount of data to send per packet.
   -T, --test_case       Flag to run the default test case suite.
-  -S SOURCE_ADDRESS, --source_address SOURCE_ADDRESS
+  -S SOURCEIP, --source_address SOURCEIP
                         Source address from which ICMP Echo packets will be
                         sent.
 }}}
@@ -45,13 +45,11 @@ optional arguments:
 
 === Using as lib ===
 {{{
-Python 2.7.11 (default, Mar  3 2016, 13:35:30) 
-[GCC 5.3.0] on linux2
-Type "help", "copyright", "credits" or "license" for more information.
+# python3
 >>> import ping
->>> ping.verbose_ping('google.com', timeout=3000, count=3, numDataBytes=1300)
-<generator object verbose_ping at 0x7fa954e04eb0>
->>> list(ping.verbose_ping('google.com', timeout=3000, count=3, numDataBytes=1300))
+>>> ping.ping('google.com', timeout=3000, count=3, delay=0.5)
+True
+>>> ping.ping('google.com', timeout=3000, count=3, delay=0.5, verbose=1)
 
 PYTHON PING google.com (216.58.212.46): 1300 data bytes
 72 bytes from 216.58.212.46: icmp_seq=0 ttl=59 time=4.42 ms
@@ -63,28 +61,36 @@ PYTHON PING google.com (216.58.212.46): 1300 data bytes
 4 packets transmitted, 4 packets received, 0.0% packet loss
 round-trip (ms)  min/avg/max = 4.4/4.5/4.7
 
-[1, 2, 3, False]
-
-
->>> list(ping.quiet_ping('google.com', timeout=3000, count=3, numDataBytes=1300))
-[1, 2, 3, (4.508256912231445, 4.332065582275391, 4.399617513020833, 0.0)]
->>> list(ping.quiet_ping('google.com', timeout=3000, count=3, numDataBytes=1300))[-1]
-(4.535675048828125, 4.359245300292969, 4.423936208089192, 0.0)
-
+1
 }}}
 
-== TODOs ==
-  * Make delay between sending packets as input parm.
+Async usage is via the {Ping} class, which can be used like this:
+{{{
+from ping import Ping,VerbosePing
+async def ping(hostname, verbose=True, handle_signals=False, **kw):
+    """
+    Send @count ping to @hostname with the given @timeout
+    """
+    ping = (VerbosePing if verbose else Ping)(verbose=verbose, **kw)
+    if handle_signals: ping.add_signal_handler()
+    await ping.init(hostname)
+    res = await ping.looped()
+    if verbose:
+        ping.print_stats()
+    ping.close()
+    return res
+}}}
 
 == contribute ==
 
-[[http://help.github.com/fork-a-repo/|Fork this repo]] on [[https://github.com/l4m3rx/python-ping/|GitHub]] and [[http://help.github.com/send-pull-requests/|send pull requests]]. Thank you.
+[[http://help.github.com/fork-a-repo/|Fork this repo]] on [[https://github.com/M-o-a-T/aioping/|GitHub]] and [[http://help.github.com/send-pull-requests/|send pull requests]]. Thank you.
 
 
 == Revision history ==
-[[https://github.com/l4m3rx/python-ping/blob/master/ChangeLog.creole|ChangeLog / Revision history]]
+[[https://github.com/M-o-a-T/aioping/commits/master|Revision history]]
 
 
 == Links ==
 
-| Sourcecode at GitHub | https://github.com/l4m3rx/python-ping |
+| Sourcecode at GitHub | https://github.com/M-o-a-T/aioping |
+
