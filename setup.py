@@ -5,7 +5,7 @@
     distutils setup
     ~~~~~~~~~~~~~~~
 
-    :homepage: https://github.com/l4m3rx/python-ping/
+    :homepage: https://github.com/M-o-a-T/aioping/
     :copyleft: 1989-2016 by the python-ping team, see AUTHORS for more details.
     :license: GNU GPL v2, see LICENSE for more details.
 """
@@ -97,20 +97,19 @@ def get_authors():
 
 
 setup(
-    name='python-ping',
-#    version=get_version_from_git(),
-    version='25102016',
-    description='A pure python ICMP ping implementation using raw sockets.',
+    name='aioping',
+    version=get_version_from_git(),
+    description='An async python ICMP ping implementation using raw sockets.',
     long_description=long_description,
     author=get_authors(),
-    maintainer="Georgi Kolev",
-    maintainer_email="georgi.kolev@gmail.com",
-    url='https://github.com/l4m3rx/python-ping/',
-    keywords="ping icmp network latency",
+    maintainer="Matthias Urlichs",
+    maintainer_email="matthias@urlichs.de",
+    url='https://github.com/M-o-a-T/aioping/',
+    keywords="asyncio ping icmp network latency",
     packages=find_packages(),
-    include_package_data=True,  # include package data under svn source control
+    include_package_data=True,
     zip_safe=False,
-    scripts=["ping.py"],
+    scripts=["scripts/ping"],
     classifiers=[
         # http://pypi.python.org/pypi?%3Aaction=list_classifiers
 #        "Development Status :: 4 - Beta",
@@ -118,7 +117,6 @@ setup(
         "Environment :: Web Environment",
         "Intended Audience :: Developers",
         "Intended Audience :: Education",
-        "Intended Audience :: End Users/Desktop",
         "License :: OSI Approved :: GNU General Public License (GPL)",
         "Operating System :: OS Independent",
         "Programming Language :: Python",
@@ -126,5 +124,5 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: System :: Networking :: Monitoring",
     ],
-    test_suite="tests",
+    # test_suite="tests",
 )
