@@ -62,7 +62,7 @@ def get_version_from_git():
     except Exception as err:
         return _error("can't convert %r to time string: %s" % (timestamp, err))
 
-    return "%s.%s" % (timestamp_formatted, mhash)
+    return "%s+git%s" % (timestamp_formatted, mhash)
 
 
 # convert creole to ReSt on-the-fly, see also:
