@@ -33,14 +33,21 @@ import os
 import sys
 import time
 import array
+import fcntl
 import socket
 import struct
 import select
 import signal
+import asyncio
+import traceback
 
 if __name__ == '__main__':
     import argparse
 
+class NoAddressFound(RuntimeError):
+    pass
+class ICMPError(RuntimeError):
+    pass
 
 try:
     from _thread import get_ident
@@ -178,11 +185,6 @@ class MStats2(object):
         return pvar**0.5
 
 
-# Used as 'global' variale so we can print
-# stats when exiting by signal
-myStats = MStats2()
-
-
 def _checksum(source_string):
     """
     A port of the functionality of in_cksum() from ping.c
@@ -207,242 +209,353 @@ def _checksum(source_string):
 
     return answer
 
+_next_id = 1
 
-def single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
-                myStats=None, ipv6=False, verbose=True, sourceIP=None,
-                sourceIntf=None):
-    """
-    Returns either the delay (in ms) or None on timeout.
-    """
-    delay = None
+class Ping(object):
+    def __init__(self, destIP=None, hostname=None, interval=1, numDataBytes=64,
+            stats=None, ipv6=False, verbose=True, sourceIP=None,
+            sourceIntf=None, loop=None, count=3, timeout=5):
+        self.destIP = destIP
+        self.hostname = hostname
+        self.interval = interval
+        self.count = count
+        self.timeout = timeout
+        self.numDataBytes = numDataBytes
+        self.stats = stats
+        self.ipv6 = ipv6
+        self.verbose = verbose
+        self.sourceIP = sourceIP
+        self.sourceIntf = sourceIntf
 
-    try:  # One could use UDP here, but it's obscure
-        if ipv6:
-            mySocket = socket.socket(socket.AF_INET6, socket.SOCK_RAW,
-                                     socket.getprotobyname("ipv6-icmp"))
-            mySocket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_RECVHOPLIMIT,
-                                1)
+        if loop is None:
+            loop = asyncio.get_event_loop()
+        self.loop = loop
+
+        self.socket = None
+
+    def close(self):
+        if self.socket is not None:
+            self.loop.remove_reader(self.socket.fileno())
+            self.socket.close()
+            self.socket = None
+
+    async def init(self, hostname=None):
+        if hostname is None:
+            hostname = self.hostname
         else:
-            mySocket = socket.socket(socket.AF_INET, socket.SOCK_RAW,
-                                     socket.getprotobyname("icmp"))
-        if sourceIP is not None:
-            mySocket.bind((sourceIP, 0))
+            self.destIP = None
 
-    except OSError as e:
-        if verbose:
-            print("failed. (socket error: '%s')" % str(e))
-            print('Note that python-ping uses RAW sockets'
-                    'and requires root rights.')
-        raise  # raise the original error
+        self.close()
 
-    if sourceIntf is not None:
-        try:
-            SO_BINDTODEVICE = socket.SO_BINDTODEVICE
-        except AttributeError:
-            SO_BINDTODEVICE = 25
-        mySocket.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE, (sourceIntf + '\0').encode('utf-8'))
+        self.seqNumber = 0
+        self.startTime = default_timer()
+        self.queue = asyncio.Queue(loop=self.loop)
 
-    my_ID = (os.getpid() ^ get_ident()) & 0xFFFF
+        global _next_id
+        self.ID = _next_id
+        _next_id += 1
 
-    sentTime = _send(mySocket, destIP, my_ID, mySeqNumber, numDataBytes, ipv6,
-                     verbose)
-    if sentTime is None:
-        mySocket.close()
-        return delay, (None,)
+        if self.destIP is None:
+            if hostname is None:
+                raise RuntimeError("You need to set either hostname or destIP")
+            for info in (await self.loop.getaddrinfo(hostname, None)):
+                if info[0] == socket.AF_INET6:
+                    if self.ipv6 is False:
+                        continue
+                    self.ipv6 = True
+                elif info[0] == socket.AF_INET:
+                    if self.ipv6 is True:
+                        continue
+                    self.ipv6 = False
+                else:
+                    continue
+                self.destIP = info[4][0]
+                break
+            else:
+                raise NoAddressFound(hostname)
 
-    if myStats is not None:
-        myStats.packet_sent()
-
-    recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL \
-        = _receive(mySocket, my_ID, timeout, ipv6)
-
-    mySocket.close()
-
-    if recvTime:
-        delay = (recvTime - sentTime) * 1000
-        if ipv6:
-            host_addr = hostname
+        if self.ipv6:
+            self.socket = socket.socket(socket.AF_INET6, socket.SOCK_RAW,
+                socket.getprotobyname("ipv6-icmp"))
+            self.socket.setsockopt(socket.IPPROTO_IPV6,
+                socket.IPV6_RECVHOPLIMIT, 1)
         else:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_RAW,
+                socket.getprotobyname("icmp"))
+
+        if self.sourceIP is not None:
+            self.socket.bind((self.sourceIP, 0))
+
+        if self.sourceIntf is not None:
             try:
-                host_addr = socket.inet_ntop(socket.AF_INET, struct.pack(
-                    "!I", iphSrcIP))
+                SO_BINDTODEVICE = socket.SO_BINDTODEVICE
             except AttributeError:
-                # Python on windows dosn't have inet_ntop.
-                host_addr = hostname
+                SO_BINDTODEVICE = 25
+            self.socket.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE,
+                (self.sourceIntf + '\0').encode('utf-8'))
 
-        if verbose:
-            print("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms" % (
-                  dataSize, host_addr, icmpSeqNumber, iphTTL, delay)
-                  )
+        # Don't block on the socket
+        flag = fcntl.fcntl(self.socket.fileno(), fcntl.F_GETFL)
+        fcntl.fcntl(self.socket.fileno(), fcntl.F_SETFL, (flag | os.O_NONBLOCK))
 
-        if myStats is not None:
-            assert isinstance(myStats, MStats2)
-            myStats.packet_received()
-            myStats.record_time(delay)
-    else:
-        delay = None
-        if verbose:
-            print("Request timed out.")
+        self.loop.add_reader(self.socket.fileno(), self._receive)
 
-    return delay, (recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL)
+    async def single(self, timeout=None):
+        """
+        Fire off a single ping.
+        Returns the answer's delay (in ms).
+        """
+        self._send()
 
+        recv = self.queue.get()
+        if timeout is None or timeout > self.timeout:
+            timeout = self.interval
+        if timeout is None or timeout > self.delay:
+            timeout = self.interval
 
-def _send(mySocket, destIP, myID, mySeqNumber, numDataBytes, ipv6=False,
-          verbose=True):
-    """
-    Send one ping to the given >destIP<.
-    """
-    # destIP  =  socket.gethostbyname(destIP)
+        if timeout is not None:
+            recv = asyncio.wait_for(recv, timeout, loop=self.loop)
 
-    # Header is type (8), code (8), checksum (16), id (16), sequence (16)
-    # (numDataBytes - 8) - Remove header size from packet size
-    myChecksum = 0
+        recv = await recv
+        if isinstance(recv,Exception):
+            raise recv
+        recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL = recv
 
-    # Make a dummy heder with a 0 checksum.
-    if ipv6:
-        header = struct.pack(
-            "!BbHHh", ICMP_ECHO_IPV6, 0, myChecksum, myID, mySeqNumber
-        )
-    else:
-        header = struct.pack(
-            "!BBHHH", ICMP_ECHO, 0, myChecksum, myID, mySeqNumber
-        )
+        delay = recvTime - self.startTime - icmpSeqNumber * self.interval
+        await self.pinged(recvTime=recvTime, delay=delay,
+            host=self.resolve_host(iphSrcIP), seqNum=icmpSeqNumber,
+            ttl=iphTTL, size=dataSize)
 
-    padBytes = []
-    startVal = 0x42
-    # 'cose of the string/byte changes in python 2/3 we have
-    # to build the data differnely for different version
-    # or it will make packets with unexpected size.
-    if sys.version[:1] == '2':
-        _bytes = struct.calcsize("d")
-        data = ((numDataBytes - 8) - _bytes) * "Q"
-        data = struct.pack("d", default_timer()) + data
-    else:
-        for i in range(startVal, startVal + (numDataBytes - 8)):
-            padBytes += [(i & 0xff)]  # Keep chars in the 0-255 range
-        # data = bytes(padBytes)
-        data = bytearray(padBytes)
-
-    # Calculate the checksum on the data and the dummy header.
-    myChecksum = _checksum(header + data)  # Checksum is in network order
-
-    # Now that we have the right checksum, we put that in. It's just easier
-    # to make up a new header than to stuff it into the dummy.
-    if ipv6:
-        header = struct.pack(
-            "!BbHHh", ICMP_ECHO_IPV6, 0, myChecksum, myID, mySeqNumber
-        )
-    else:
-        header = struct.pack(
-            "!BBHHH", ICMP_ECHO, 0, myChecksum, myID, mySeqNumber
-        )
-
-    packet = header + data
-
-    sendTime = default_timer()
-
-    try:
-        mySocket.sendto(packet, (destIP, 58))  # Port number is irrelevant
-    except OSError as e:
-        if verbose:
-            print("General failure (%s)" % str(e))
-        return
-    except socket.error as e:
-        if verbose:
-            print("General failure (%s)" % str(e))
-        return
-
-    return sendTime
-
-
-def _receive(mySocket, myID, timeout, ipv6=False):
-    """
-    Receive the ping from the socket. Timeout = in ms
-    """
-    timeLeft = timeout / 1000
-
-    while True:  # Loop while waiting for packet or timeout
-        startedSelect = default_timer()
-        whatReady = select.select([mySocket], [], [], timeLeft)
-        howLongInSelect = (default_timer() - startedSelect)
-        if whatReady[0] == []:  # Timeout
-            return None, 0, 0, 0, 0
-
-        timeReceived = default_timer()
-
-        iphSrcIP = 0
-        iphDestIP = 0
-        if ipv6:
-            recPacket, ancdata, flags, addr = mySocket.recvmsg(ICMP_MAX_RECV)
-            iphTTL = 0
-            if len(ancdata) == 1:
-                cmsg_level, cmsg_type, cmsg_data = ancdata[0]
-                a = array.array("i")
-                a.frombytes(cmsg_data)
-                iphTTL = a[0]
+        if self.interval > 0:
+            delay = self.seqNumber * self.interval - (recvTime - self.startTime)
         else:
-            recPacket, addr = mySocket.recvfrom(ICMP_MAX_RECV)
-            ipHeader = recPacket[:20]
-            iphVersion, iphTypeOfSvc, iphLength, iphID, iphFlags, iphTTL, \
-                iphProtocol, iphChecksum, iphSrcIP, iphDestIP = struct.unpack(
-                    "!BBHHHBBHII", ipHeader)
+            delay = None
+        return delay, (recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL)
 
-        if ipv6:
-            icmpHeader = recPacket[0:8]
+    async def pinged(self, recvTime,delay,host,seqNum,ttl,size):
+        """Hook to catch a successful ping"""
+        pass
+
+    async def looped(self):
+        """
+        Send .count ping to .destIP with the given delay and timeout.
+
+        To continuously attempt ping requests, set .count to zero.
+        """
+
+        assert self.interval > 0
+
+        while not self.count or self.stats.pktsRcvd < self.count:
+            now = default_timer()
+            delay1 = self.seqNumber * self.interval - (now - self.startTime)
+            while (not self.count or self.seqNumber < self.count) and delay1 <= 0:
+                self._send()
+                delay1 += self.interval
+            if self.count and self.seqNumber >= self.count:
+                delay1 = None
+            if self.timeout is not None:
+                delay2 = self.startTime+self.timeout - now
+                if delay2 < 0:
+                    break
+                if delay1 is None or delay1 > delay2:
+                    delay1 = delay2
+            try:
+                recv = self.queue.get()
+                if delay1 is not None:
+                    recv = asyncio.wait_for(recv, delay1,
+                        loop=self.loop)
+                recv = await recv
+                if isinstance(recv,Exception): # error
+                    if isinstance(recv,ICMPError):
+                        print("ICMP Error: %s/%s" % recv.args)
+                        continue
+                    else:
+                        raise
+                recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL = recv
+                delay = recvTime - self.startTime - icmpSeqNumber * self.interval
+                await self.pinged(recvTime=recvTime, delay=delay,
+                    host=self.resolve_host(iphSrcIP), seqNum=icmpSeqNumber,
+                    ttl=iphTTL, size=dataSize)
+
+            except asyncio.TimeoutError:
+                pass
+
+        return self.stats.pktsRcvd
+
+    def resolve_host(self, iphSrcIP):
+        return iphSrcIP
+
+
+    def _send(self):
+        """
+        Send one ping to the given >destIP<.
+        """
+
+        # Header is type (8), code (8), checksum (16), id (16), sequence (16)
+        # (numDataBytes - 8) - Remove header size from packet size
+        myChecksum = 0
+
+        # Make a dummy heder with a 0 checksum.
+        if self.ipv6:
+            header = struct.pack(
+                "!BbHHh", ICMP_ECHO_IPV6, 0, myChecksum, self.ID, self.seqNumber
+            )
         else:
-            icmpHeader = recPacket[20:28]
+            header = struct.pack(
+                "!BBHHH", ICMP_ECHO, 0, myChecksum, self.ID, self.seqNumber
+            )
 
-        icmpType, icmpCode, icmpChecksum, icmpPacketID, icmpSeqNumber \
-            = struct.unpack("!BBHHH", icmpHeader)
+        padBytes = []
+        startVal = 0x42
+        # because of the string/byte changes in python 2/3 we have
+        # to build the data differnely for different version
+        # or it will make packets with unexpected size.
+        if sys.version[:1] == '2':
+            _bytes = struct.calcsize("d")
+            data = ((numDataBytes - 8) - _bytes) * "Q"
+            data = struct.pack("d", default_timer()) + data
+        else:
+            for i in range(startVal, startVal + (self.numDataBytes - 8)):
+                padBytes += [(i & 0xff)]  # Keep chars in the 0-255 range
+            # data = bytes(padBytes)
+            data = bytearray(padBytes)
 
-        # We shouldn't see our own packets, but ...
-        if icmpType not in (ICMP_ECHO, ICMP_ECHO_IPV6):
+        # Calculate the checksum on the data and the dummy header.
+        myChecksum = _checksum(header + data)  # Checksum is in network order
 
-            # "Real" reply?
-            if icmpType in (ICMP_ECHOREPLY, ICMP_ECHO_IPV6_REPLY) and \
-                    icmpPacketID == myID:
-                dataSize = len(recPacket) - 28
-                return timeReceived, (dataSize + 8), iphSrcIP, icmpSeqNumber, \
-                    iphTTL
+        # Now that we have the right checksum, we put that in. It's just easier
+        # to make up a new header than to stuff it into the dummy.
+        if self.ipv6:
+            header = struct.pack(
+                "!BbHHh", ICMP_ECHO_IPV6, 0, myChecksum, self.ID, self.seqNumber
+            )
+        else:
+            header = struct.pack(
+                "!BBHHH", ICMP_ECHO, 0, myChecksum, self.ID, self.seqNumber
+            )
 
-            # TODO improve error reporting. XXX: need to re-use the
-            # socket, otherwise we won't get host-unreachable errors.
-            print("Error: type=%d code=%d" % (icmpType, icmpCode))
+        packet = header + data
 
-        timeLeft = timeLeft - howLongInSelect
-        if timeLeft <= 0:
-            break
-
-    return None, 0, 0, 0, 0
-
-
-def _dump_stats(myStats):
-    """
-    Show stats when pings are done
-    """
-    print("\n----%s PYTHON PING Statistics----" % (myStats.thisIP))
-
-    print("%d packets transmitted, %d packets received, %0.1f%% packet loss"
-          % (myStats.pktsSent, myStats.pktsRcvd, 100.0 * myStats.fracLoss))
-
-    if myStats.pktsRcvd > 0:
-        print("round-trip (ms)  min/avg/max = %0.1f/%0.1f/%0.1f" % (
-            myStats.minTime, myStats.avrgTime, myStats.maxTime
-        ))
-        print('                 median/pstddev = %0.2f/%0.2f' % (
-            myStats.median_time, myStats.pstdev_time
-        ))
-
-    print('')
-    return
+        self.socket.sendto(packet, (self.destIP, 0))  # Port number is irrelevant
+        if self.stats is not None:
+            self.stats.packet_sent()
+        self.seqNumber += 1
 
 
-def _signal_handler(signum, frame):
-    """ Handle exit via signals """
-    global myStats
-    _dump_stats(myStats)
-    print("\n(Terminated with signal %d)\n" % (signum))
-    sys.exit(0)
+    def _receive(self):
+        """
+        Receive the ping from the socket. Timeout = in ms
+        """
+
+        try:
+            timeReceived = default_timer()
+
+            iphSrcIP = 0
+            iphDestIP = 0
+            if self.ipv6:
+                recPacket, ancdata, flags, addr = self.socket.recvmsg(ICMP_MAX_RECV)
+                iphSrcIP = addr[0]
+                iphTTL = 0
+                if len(ancdata) == 1:
+                    cmsg_level, cmsg_type, cmsg_data = ancdata[0]
+                    a = array.array("i")
+                    a.frombytes(cmsg_data)
+                    iphTTL = a[0]
+            else:
+                recPacket, addr = self.socket.recvfrom(ICMP_MAX_RECV)
+                ipHeader = recPacket[:20]
+                iphVersion, iphTypeOfSvc, iphLength, iphID, iphFlags, iphTTL, \
+                    iphProtocol, iphChecksum, iphSrcIP, iphDestIP = struct.unpack(
+                        "!BBHHHBBHII", ipHeader)
+                iphSrcIP = socket.inet_ntop(socket.AF_INET,
+                    struct.pack("!I", iphSrcIP))
+
+
+            if self.ipv6:
+                icmpHeader = recPacket[0:8]
+            else:
+                icmpHeader = recPacket[20:28]
+
+            icmpType, icmpCode, icmpChecksum, icmpPacketID, icmpSeqNumber \
+                = struct.unpack("!BBHHH", icmpHeader)
+
+            # We shouldn't see our own packets, but ...
+            if icmpType not in (ICMP_ECHO, ICMP_ECHO_IPV6):
+
+                # "Real" reply?
+                if icmpType in (ICMP_ECHOREPLY, ICMP_ECHO_IPV6_REPLY) and \
+                        icmpPacketID == self.ID:
+                    dataSize = len(recPacket) - 28
+                    if self.stats is not None:
+                        self.stats.packet_received()
+                        delay = timeReceived - self.startTime - icmpSeqNumber * self.interval
+                        self.stats.record_time(delay)
+                    self.queue.put_nowait((timeReceived, (dataSize + 8), iphSrcIP, \
+                        icmpSeqNumber, iphTTL))
+                else:
+                    # TODO improve error reporting. XXX: need to re-use the
+                    # socket, otherwise we won't get host-unreachable errors.
+                    self.queue.put_nowait(ICMPError(icmpType,icmpCode))
+
+        except BaseException as exc:
+            self.loop.stop()
+            raise
+
+    def print_stats(self):
+        """
+        Show stats when pings are done
+        """
+        myStats = self.stats
+        if myStats is None:
+            return
+
+        print("\n----%s PYTHON PING Statistics----" % (myStats.thisIP))
+
+        print("%d packets transmitted, %d packets received, %0.1f%% packet loss"
+            % (myStats.pktsSent, myStats.pktsRcvd, 100.0 * myStats.fracLoss))
+
+        if myStats.pktsRcvd > 0:
+            print("round-trip (ms)  min/avg/max = %0.1f/%0.1f/%0.1f" % (
+                myStats.minTime*1000, myStats.avrgTime*1000, myStats.maxTime*1000
+            ))
+            print('                 median/pstddev = %0.2f/%0.2f' % (
+                myStats.median_time*1000, myStats.pstdev_time*1000
+            ))
+
+        print('')
+        return
+
+    def _signal_handler(self, signum, frame):
+        """ Handle exit via signals """
+        self.print_stats()
+        print("(Terminated with signal %d)" % signum)
+        sys.exit(0)
+
+    def add_signal_handler(self):
+        signal.signal(signal.SIGINT, self._signal_handler)
+        if hasattr(signal, "SIGBREAK"):  # Handle Ctrl-Break /Windows/
+            signal.signal(signal.SIGBREAK, self._signal_handler)
+
+
+class Verbose(object):
+    """A mix-in class to print a message when each ping os received"""
+    async def pinged(self, **kw):
+        await super().pinged(**kw)
+        print("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms" % (
+            kw['size'], kw['host'], kw['seqNum'], kw['ttl'], kw['delay']*1000))
+
+class VerbosePing(Verbose,Ping):
+    pass
+
+"""Compatibility methods"""
+
+def single_ping(timeout=3, **av):
+    ping = Ping(**av)
+    ping.loop.run_until_complete(ping.init())
+    res = ping.loop.run_until_complete(asyncio.wait_for(timeout, ping.single(), ping.loop))
+    ping.close()
+    return res
+
 
 
 def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
@@ -452,164 +565,45 @@ def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
     time.sleep(0.5)
 
 
-def verbose_ping(hostname, timeout=3000, count=3,
-                 numDataBytes=64, path_finder=False, ipv6=False,
-                 **kw):
+def ping(hostname, verbose=True, stats=False, handle_signals=None, count=3, **kw):
     """
-    Send >count< ping to >destIP< with the given >timeout< and display
+    Send @count ping to @destIP with the given @timeout, and display
     the result.
 
-    To continuously attempt ping requests, set >count< to None.
+    To continuously attempt ping requests, set @count to zero.
 
-    To consume the generator, use the following syntax:
-        >>> import ping
-        >>> for return_val in ping.verbose_ping('google.ca'):
-            pass  # COLLECT YIELDS AND PERFORM LOGIC.
+    Installs a signal handler if @count is zero.
+    Override this by setting @handle_signals.
 
-    Alternatively, you can consume the generator by using list comprehension:
-        >>> import ping
-        >>> consume = list(ping.verbose_ping('google.ca'))
-
-    Via the same syntax, you can successfully get the exit code via:
-        >>> import ping
-        >>> consume = list(ping.verbose_ping('google.ca'))
-        >>> exit_code = consume[:-1]  # The last yield is the exit code.
-        >>> sys.exit(exit_code)
+    Returns the ping statistics object if @stats is true. Otherwise,
+    the result is True if there was at least one valid echo.
     """
-
-    global myStats
-
-    # Handle Ctrl+C
-    signal.signal(signal.SIGINT, _signal_handler)
-    if hasattr(signal, "SIGBREAK"):  # Handle Ctrl-Break /Windows/
-        signal.signal(signal.SIGBREAK, _signal_handler)
-
-    myStats = MStats2()  # Reset the stats
-    mySeqNumber = 0  # Starting value
-
+    if 'stats' not in kw:
+        kw['stats'] = MStats2()
+    ping = (VerbosePing if verbose else Ping)(verbose=verbose, count=count, **kw)
+    if handle_signals is None:
+        handle_signals = (not count)
+    if handle_signals:
+        ping.add_signal_handler()
     try:
-        for info in socket.getaddrinfo(hostname, None):
-            if info[0] == socket.AF_INET6:
-                if ipv6 is False:
-                    continue
-                ipv6 = True
-            elif info[0] == socket.AF_INET:
-                if ipv6 is True:
-                    continue
-                ipv6 = False
-            else:
-                continue
-            destIP = info[4][0]
-            break
-        else:
-            print("\nPYTHON PING: No address for host: %s" % (hostname,))
-            print('')
-            return
-            
-        print("\nPYTHON PING %s (%s): %d data bytes" % (hostname, destIP,
-                                                        numDataBytes))
+        ping.loop.run_until_complete(ping.init(hostname))
     except socket.gaierror as e:
-        print("\nPYTHON PING: Unknown host: %s (%s)" % (hostname, str(e)))
-        print('')
+        print("%s: %s" % (hostname,str(e)))
         return
-
-    myStats.thisIP = destIP
-
-    # This will send packet that we don't care about 0.5 seconds before it
-    # starts actually pinging. This is needed in big MAN/LAN networks where
-    # you sometimes loose the first packet. (while the switches find the way)
-    if path_finder:
-        print("PYTHON PING %s (%s): Sending pathfinder ping" %
-              (hostname, destIP))
-        _pathfind_ping(destIP, hostname, timeout,
-                       mySeqNumber, numDataBytes, ipv6=ipv6, **kw)
-        print()
-
-    i = 0
-    while 1:
-        delay = single_ping(destIP, hostname, timeout, mySeqNumber,
-                            numDataBytes, ipv6=ipv6, myStats=myStats,
-                            **kw)
-        delay = 0 if delay is None or delay[0] is None else delay[0]
-
-        mySeqNumber += 1
-
-        # Pause for the remainder of the MAX_SLEEP period (if applicable)
-        if (MAX_SLEEP > delay):
-            time.sleep((MAX_SLEEP - delay) / 1000)
-
-        if count is not None and i < count:
-            i += 1
-            yield myStats.pktsRcvd
-        elif count is None:
-            yield myStats.pktsRcvd
-        elif count is not None and i >= count:
-            break
-
-    _dump_stats(myStats)
-    # 0 if we receive at least one packet
-    # 1 if we don't receive any packets
-    yield not myStats.pktsRcvd
-
-
-def quiet_ping(hostname, timeout=3000, count=3, advanced_statistics=False,
-               numDataBytes=64, path_finder=False, ipv6=False, **kw):
-    """ Same as verbose_ping, but the results are yielded as a tuple """
-    myStats = MStats2()  # Reset the stats
-    mySeqNumber = 0  # Starting value
-
-    try:
-        if ipv6:
-            info = socket.getaddrinfo(hostname, None)[0]
-            destIP = info[4][0]
-        else:
-            destIP = socket.gethostbyname(hostname)
-    except socket.gaierror:
-        yield False
+    except Exception as e:
+        traceback.print_exc()
         return
+    res = ping.loop.run_until_complete(ping.looped())
+    if verbose:
+        ping.print_stats()
+    ping.close()
 
-    myStats.thisIP = destIP
-
-    # This will send packet that we don't care about 0.5 seconds before it
-    # starts actually pinging. This is needed in big MAN/LAN networks where
-    # you sometimes loose the first packet. (while the switches find the way)
-    if path_finder:
-        _pathfind_ping(destIP, hostname, timeout,
-                       mySeqNumber, numDataBytes, ipv6=ipv6, **kw)
-
-    i = 1
-    while 1:
-        delay = single_ping(destIP, hostname, timeout, mySeqNumber,
-                            numDataBytes, ipv6=ipv6, myStats=myStats,
-                            verbose=False, **kw)
-        delay = 0 if delay[0] is None else delay[0]
-
-        mySeqNumber += 1
-        # Pause for the remainder of the MAX_SLEEP period (if applicable)
-        if (MAX_SLEEP > delay):
-            time.sleep((MAX_SLEEP - delay) / 1000)
-
-        yield myStats.pktsSent
-        if count is not None and i < count:
-            i += 1
-        elif count is not None and i >= count:
-            break
-        elif count is not None:
-            yield myStats.pktsSent
-
-    if advanced_statistics:
-        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost,
-        # median, pop.std.dev)
-        yield myStats.maxTime, myStats.minTime, myStats.avrgTime,
-        myStats.fracLoss, myStats.median_time, myStats.pstdev_time
-    else:
-        # return tuple(max_rtt, min_rtt, avrg_rtt, percent_lost)
-        yield myStats.maxTime, myStats.minTime, myStats.avrgTime,
-        myStats.fracLoss
+    if stats:
+        return stats
+    return res
 
 
 if __name__ == '__main__':
-    # FIXME: Add a real CLI (mostly fixed)
     if sys.argv.count('-T') or sys.argv.count('--test_case'):
         print('Running PYTHON PING test case.')
         # These should work:
@@ -645,17 +639,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='python-ping',
                                      description='A pure python implementation\
                                       of the ping protocol. *REQUIRES ROOT*')
-    parser.add_argument('address', help='The address to attempt to ping.')
+    parser.add_argument('hostname', help='The address to attempt to ping.')
 
-    parser.add_argument('-t', '--timeout', help='The maximum amount of time to\
-                         wait until ping timeout.', type=int, default=3000)
+    parser.add_argument('-w', '--deadline', help='The maximum amount of time to\
+                         wait until ping times out.', type=float, dest='timeout')
 
     parser.add_argument('-c', '--request_count', help='The number of attempts \
-                        to make. See --infinite to attempt requests until \
-                        stopped.', type=int, default=3)
+                        to make. Zero=infinite.', type=int, dest='count')
 
-    parser.add_argument('-i', '--infinite', help='Flag to continuously ping \
-                        a host until stopped.', action='store_true')
+    parser.add_argument('-i', '--interval', help='Time between ping \
+                        attempts', action='store', type=float, dest='interval', \
+                        default=1)
 
     parser.add_argument('-4', '--ipv4', action='store_const', const=False,
                         dest='ipv6', help='Flag to use IPv4.')
@@ -663,29 +657,22 @@ if __name__ == '__main__':
                         dest='ipv6', help='Flag to use IPv6.')
 
     parser.add_argument('-I', '--interface', action='store', help='Interface \
-                        to use.')
+                        to use.', dest='sourceIntf')
 
     parser.add_argument('-s', '--packet_size', type=int, help='Designate the\
-                        amount of data to send per packet.', default=64)
+                        amount of data to send per packet.', default=64,
+                        dest='numDataBytes')
 
     parser.add_argument('-T', '--test_case', action='store_true', help='Flag \
                         to run the default test case suite.')
 
     parser.add_argument('-S', '--source_address', help='Source address from which \
-                        ICMP Echo packets will be sent.')
+                        ICMP Echo packets will be sent.', dest='sourceIP')
 
     parsed = parser.parse_args()
+    kw=dict((k,v) for k,v in vars(parsed).items() if v is not None)
+    kw.pop('test_case',None)
 
-    if parsed.infinite:
-        sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
-                                   None, parsed.packet_size,
-                                   ipv6=parsed.ipv6,
-                                   sourceIP=parsed.source_address,
-                                   sourceIntf=parsed.interface))[:-1])
+    res = ping(**kw)
+    sys.exit(0 if res else 1)
 
-    else:
-        sys.exit(list(verbose_ping(parsed.address, parsed.timeout,
-                                   parsed.request_count, parsed.packet_size,
-                                   ipv6=parsed.ipv6,
-                                   sourceIP=parsed.source_address,
-                                   sourceIntf=parsed.interface))[:-1])
