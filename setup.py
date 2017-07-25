@@ -50,7 +50,7 @@ def get_version_from_git():
             % (returncode, process.stdout.readline(), process.stderr.readline())
         )
 
-    output = process.stdout.readline().strip()
+    output = process.stdout.readline().strip().decode('utf-8')
     try:
         raw_timestamp, mhash = output.split("-", 1)
         timestamp = int(raw_timestamp)
