@@ -23,7 +23,7 @@ from __future__ import division, print_function
     Distributable under the terms of the GNU General Public License
     version 2. Provided with no warranties of any sort.
 
-    website: https://github.com/l4m3rx/python-ping
+    website: https://github.com/M-o-a-T/aioping
 
 """
 
@@ -68,8 +68,7 @@ if __name__ == '__main__':
 
         exit()
 
-    parser = argparse.ArgumentParser(prog='python-ping',
-                                     description='A pure python implementation\
+    parser = argparse.ArgumentParser(description='A pure python implementation\
                                       of the ping protocol. *REQUIRES ROOT*')
     parser.add_argument('hostname', help='The address to attempt to ping.')
 
