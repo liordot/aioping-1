@@ -33,7 +33,7 @@ def get_version_from_git():
     try:
         process = subprocess.Popen(
             # %ct: committer date, UNIX timestamp
-            ["/usr/bin/git", "log", "--pretty=format:%ct-%h", "-1", "HEAD"],
+            ["/usr/bin/git", "describe", "--tags", "--dirty=+dirty"],
             shell=False, cwd=PACKAGE_ROOT,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
@@ -51,18 +51,8 @@ def get_version_from_git():
         )
 
     output = process.stdout.readline().strip().decode('utf-8')
-    try:
-        raw_timestamp, mhash = output.split("-", 1)
-        timestamp = int(raw_timestamp)
-    except Exception as err:
-        return _error("Error in git log output! Output was: %r" % output)
-
-    try:
-        timestamp_formatted = time.strftime("%Y.%m.%d", time.gmtime(timestamp))
-    except Exception as err:
-        return _error("can't convert %r to time string: %s" % (timestamp, err))
-
-    return "%s+git%s" % (timestamp_formatted, mhash)
+    output = output.replace("-g","+git")
+    return output
 
 
 # convert creole to ReSt on-the-fly, see also:
