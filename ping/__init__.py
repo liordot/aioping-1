@@ -547,7 +547,7 @@ class Verbose(object):
 class VerbosePing(Verbose,Ping):
     pass
 
-"""Compatibility methods"""
+"""Shortcut methods, not async"""
 
 def single_ping(timeout=3, **av):
     ping = Ping(**av)
@@ -555,8 +555,6 @@ def single_ping(timeout=3, **av):
     res = ping.loop.run_until_complete(asyncio.wait_for(timeout, ping.single(), ping.loop))
     ping.close()
     return res
-
-
 
 def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
                    **kw):
@@ -601,78 +599,4 @@ def ping(hostname, verbose=True, stats=False, handle_signals=None, count=3, **kw
     if stats:
         return stats
     return res
-
-
-if __name__ == '__main__':
-    if sys.argv.count('-T') or sys.argv.count('--test_case'):
-        print('Running PYTHON PING test case.')
-        # These should work:
-        for val in verbose_ping("127.0.0.1"):
-            pass
-        for val in verbose_ping("8.8.8.8"):
-            pass
-        for val in verbose_ping("heise.de"):
-            pass
-        for val in verbose_ping("google.com"):
-            pass
-
-        # Inconsistent on Windows w/ ActivePython (Python 3.2 resolves
-        # correctly to the local host, but 2.7 tries to resolve to the local
-        # *gateway*)
-        for val in verbose_ping("localhost"):
-            pass
-
-        # Should fail with 'getaddrinfo failed':
-        for val in verbose_ping("foobar_url.fooobar"):
-            pass
-
-        # Should fail (timeout), but it depends on the local network:
-        for val in verbose_ping("192.168.255.254"):
-            pass
-
-        # Should fails with 'The requested address is not valid in its context'
-        for val in verbose_ping("0.0.0.0"):
-            pass
-
-        exit()
-
-    parser = argparse.ArgumentParser(prog='python-ping',
-                                     description='A pure python implementation\
-                                      of the ping protocol. *REQUIRES ROOT*')
-    parser.add_argument('hostname', help='The address to attempt to ping.')
-
-    parser.add_argument('-w', '--deadline', help='The maximum amount of time to\
-                         wait until ping times out.', type=float, dest='timeout')
-
-    parser.add_argument('-c', '--request_count', help='The number of attempts \
-                        to make. Zero=infinite.', type=int, dest='count')
-
-    parser.add_argument('-i', '--interval', help='Time between ping \
-                        attempts', action='store', type=float, dest='interval', \
-                        default=1)
-
-    parser.add_argument('-4', '--ipv4', action='store_const', const=False,
-                        dest='ipv6', help='Flag to use IPv4.')
-    parser.add_argument('-6', '--ipv6', action='store_const', const=True,
-                        dest='ipv6', help='Flag to use IPv6.')
-
-    parser.add_argument('-I', '--interface', action='store', help='Interface \
-                        to use.', dest='sourceIntf')
-
-    parser.add_argument('-s', '--packet_size', type=int, help='Designate the\
-                        amount of data to send per packet.', default=64,
-                        dest='numDataBytes')
-
-    parser.add_argument('-T', '--test_case', action='store_true', help='Flag \
-                        to run the default test case suite.')
-
-    parser.add_argument('-S', '--source_address', help='Source address from which \
-                        ICMP Echo packets will be sent.', dest='sourceIP')
-
-    parsed = parser.parse_args()
-    kw=dict((k,v) for k,v in vars(parsed).items() if v is not None)
-    kw.pop('test_case',None)
-
-    res = ping(**kw)
-    sys.exit(0 if res else 1)
 
