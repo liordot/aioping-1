@@ -1,4 +1,4 @@
-== aioping ==
+== aio_ping ==
 An asyncio-based python ping implementation using raw sockets.
  * Compatible with Python 3.5 ff.
  * Note that ICMP messages can only be sent from processes running as root
@@ -46,10 +46,10 @@ optional arguments:
 === Using as lib ===
 {{{
 # python3
->>> import ping
->>> ping.ping('google.com', timeout=3000, count=3, delay=0.5)
+>>> from aio_ping import ping
+>>> ping('google.com', timeout=3000, count=3, delay=0.5)
 True
->>> ping.ping('google.com', timeout=3000, count=3, delay=0.5, verbose=1)
+>>> ping('google.com', timeout=3000, count=3, delay=0.5, verbose=True)
 
 PYTHON PING google.com (216.58.212.46): 1300 data bytes
 72 bytes from 216.58.212.46: icmp_seq=0 ttl=59 time=4.42 ms
@@ -66,7 +66,7 @@ round-trip (ms)  min/avg/max = 4.4/4.5/4.7
 
 Async usage is via the {Ping} class, which can be used like this:
 {{{
-from ping import Ping,VerbosePing
+from aio_ping import Ping,VerbosePing
 async def ping(hostname, verbose=True, handle_signals=False, **kw):
     """
     Send @count ping to @hostname with the given @timeout
