@@ -380,8 +380,8 @@ class Ping(object):
         return self.stats.pktsRcvd
 
     def resolve_host(self, iphSrcIP):
+        """TODO: actually resolve this address"""
         return iphSrcIP
-
 
     def _send(self):
         """
