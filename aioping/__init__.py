@@ -574,15 +574,8 @@ async def verbose_ping(dest_addr, verbose=True, stats=False, handle_signals=None
         handle_signals = (not count)
     if handle_signals:
         ping.add_signal_handler()
-    try:
-        await ping.init(dest_addr)
-        res = await ping.run()
-    except OSError as e:
-        print("%s: %s" % (dest_addr,str(e)))
-        return
-    except Exception as e:
-        traceback.print_exc()
-        return
+    await ping.init(dest_addr)
+    res = await ping.run()
     if verbose:
         ping.print_stats()
     ping.close()
