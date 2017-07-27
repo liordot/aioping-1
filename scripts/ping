@@ -31,6 +31,7 @@ from __future__ import division, print_function
 # This would enable extension into larger framework that aren't multi threaded.
 import os
 import sys
+import asyncio
 import argparse
 
 from aioping import ping,verbose_ping
@@ -70,7 +71,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='A pure python implementation\
                                       of the ping protocol. *REQUIRES ROOT*')
-    parser.add_argument('hostname', help='The address to attempt to ping.')
+    parser.add_argument('dest_addr', help='The address to attempt to ping.')
 
     parser.add_argument('-w', '--deadline', help='The maximum amount of time to\
                          wait until ping times out.', type=float, dest='timeout')
@@ -104,6 +105,7 @@ if __name__ == '__main__':
     kw=dict((k,v) for k,v in vars(parsed).items() if v is not None)
     kw.pop('test_case',None)
 
-    res = ping(**kw)
+    loop = asyncio.get_event_loop()
+    res = loop.run_until_complete(verbose_ping(**kw))
     sys.exit(0 if res else 1)
 
