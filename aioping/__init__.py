@@ -470,12 +470,9 @@ class Ping(object):
             icmpType, icmpCode, icmpChecksum, icmpPacketID, icmpSeqNumber \
                 = struct.unpack("!BBHHH", icmpHeader)
 
-            # We shouldn't see our own packets, but ...
-            if icmpType not in (ICMP_ECHO, ICMP_ECHO_IPV6):
-
-                # "Real" reply?
-                if icmpType in (ICMP_ECHOREPLY, ICMP_ECHO_IPV6_REPLY) and \
-                        icmpPacketID == self.ID:
+            if icmpType in (ICMP_ECHOREPLY, ICMP_ECHO_IPV6_REPLY):
+                # Reply to our packet?
+                if icmpPacketID == self.ID:
                     dataSize = len(recPacket) - 28
                     if self.stats is not None:
                         self.stats.packet_received()
@@ -483,10 +480,10 @@ class Ping(object):
                         self.stats.record_time(delay)
                     self.queue.put_nowait((timeReceived, (dataSize + 8), iphSrcIP, \
                         icmpSeqNumber, iphTTL))
-                else:
-                    # TODO improve error reporting. XXX: need to re-use the
-                    # socket, otherwise we won't get host-unreachable errors.
-                    self.queue.put_nowait(ICMPError(icmpType,icmpCode))
+            elif icmpType not in (ICMP_ECHO, ICMP_ECHO_IPV6):
+                # TODO improve error reporting. XXX: need to re-use the
+                # socket, otherwise we won't get host-unreachable errors.
+                self.queue.put_nowait(ICMPError(icmpType,icmpCode))
 
         except BaseException as exc:
             self.loop.stop()
