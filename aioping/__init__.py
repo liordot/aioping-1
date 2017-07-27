@@ -329,11 +329,7 @@ class Ping(object):
             host=self.resolve_host(iphSrcIP), seqNum=icmpSeqNumber,
             ttl=iphTTL, size=dataSize)
 
-        if self.interval > 0:
-            delay = self.seqNumber * self.interval - (recvTime - self.startTime)
-        else:
-            delay = None
-        return delay, (recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL)
+        return delay
 
     async def pinged(self, recvTime,delay,host,seqNum,ttl,size):
         """Hook to catch a successful ping"""
