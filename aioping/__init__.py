@@ -406,18 +406,10 @@ class Ping(object):
 
         padBytes = []
         startVal = 0x42
-        # because of the string/byte changes in python 2/3 we have
-        # to build the data differnely for different version
-        # or it will make packets with unexpected size.
-        if sys.version[:1] == '2':
-            _bytes = struct.calcsize("d")
-            data = ((numDataBytes - 8) - _bytes) * "Q"
-            data = struct.pack("d", default_timer()) + data
-        else:
-            for i in range(startVal, startVal + (self.numDataBytes - 8)):
-                padBytes += [(i & 0xff)]  # Keep chars in the 0-255 range
-            # data = bytes(padBytes)
-            data = bytearray(padBytes)
+        for i in range(startVal, startVal + (self.numDataBytes - 8)):
+            padBytes += [(i & 0xff)]  # Keep chars in the 0-255 range
+        # data = bytes(padBytes)
+        data = bytearray(padBytes)
 
         # Calculate the checksum on the data and the dummy header.
         myChecksum = _checksum(header + data)  # Checksum is in network order
