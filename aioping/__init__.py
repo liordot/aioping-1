@@ -440,11 +440,20 @@ class Ping(object):
         try:
             timeReceived = default_timer()
 
-            iphSrcIP = 0
-            iphDestIP = 0
+            # iphDestIP is the original address from 
+            recPacket, ancdata, flags, addr = self.socket.recvmsg(ICMP_MAX_RECV)
             if self.ipv6:
-                recPacket, ancdata, flags, addr = self.socket.recvmsg(ICMP_MAX_RECV)
+                icmpHeader = recPacket[0:8]
+            else:
+                icmpHeader = recPacket[20:28]
+            icmpType, icmpCode, icmpChecksum, icmpPacketID, icmpSeqNumber \
+                = struct.unpack("!BBHHH", icmpHeader)
+
+            if self.ipv6:
                 iphSrcIP = addr[0]
+                if icmpType not in (ICMP_ECHO_IPV6, ICMP_ECHO_IPV6_REPLY):
+                    iphDestIP = socket.inet_ntop(socket.AF_INET6,
+                        recPacket[32:48])
                 iphTTL = 0
                 if len(ancdata) == 1:
                     cmsg_level, cmsg_type, cmsg_data = ancdata[0]
@@ -452,22 +461,15 @@ class Ping(object):
                     a.frombytes(cmsg_data)
                     iphTTL = a[0]
             else:
-                recPacket, addr = self.socket.recvfrom(ICMP_MAX_RECV)
                 ipHeader = recPacket[:20]
                 iphVersion, iphTypeOfSvc, iphLength, iphID, iphFlags, iphTTL, \
                     iphProtocol, iphChecksum, iphSrcIP, iphDestIP = struct.unpack(
                         "!BBHHHBBHII", ipHeader)
                 iphSrcIP = socket.inet_ntop(socket.AF_INET,
                     struct.pack("!I", iphSrcIP))
-
-
-            if self.ipv6:
-                icmpHeader = recPacket[0:8]
-            else:
-                icmpHeader = recPacket[20:28]
-
-            icmpType, icmpCode, icmpChecksum, icmpPacketID, icmpSeqNumber \
-                = struct.unpack("!BBHHH", icmpHeader)
+                if icmpType not in (ICMP_ECHO, ICMP_ECHOREPLY):
+                    iphDestIP = socket.inet_ntop(socket.AF_INET,
+                        recPacket[44:48])
 
             if icmpType in (ICMP_ECHOREPLY, ICMP_ECHO_IPV6_REPLY):
                 # Reply to our packet?
@@ -479,7 +481,8 @@ class Ping(object):
                         self.stats.record_time(delay)
                     self.queue.put_nowait((timeReceived, (dataSize + 8), iphSrcIP, \
                         icmpSeqNumber, iphTTL))
-            elif icmpType not in (ICMP_ECHO, ICMP_ECHO_IPV6):
+            elif icmpType not in (ICMP_ECHO, ICMP_ECHO_IPV6) \
+                    and iphDestIP == self.destIP:
                 # TODO improve error reporting. XXX: need to re-use the
                 # socket, otherwise we won't get host-unreachable errors.
                 self.queue.put_nowait(ICMPError(icmpType,icmpCode))
