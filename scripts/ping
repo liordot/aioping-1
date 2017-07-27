@@ -33,7 +33,7 @@ import os
 import sys
 import argparse
 
-from aio_ping import ping
+from aioping import ping,verbose_ping
 
 if __name__ == '__main__':
     if sys.argv.count('-T') or sys.argv.count('--test_case'):

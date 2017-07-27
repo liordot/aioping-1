@@ -23,7 +23,10 @@ from __future__ import division, print_function
     Distributable under the terms of the GNU General Public License
     version 2. Provided with no warranties of any sort.
 
-    website: https://github.com/l4m3rx/python-ping
+    asyncio enhancements (c) Matthias Urlichs <matthias@urlichs.de>
+    Public interface adapted from code by Anton Belousov / Stellarbit LLC
+
+    Website / bug tracker: https://github.com/M-o-a-T/aioping
 
 """
 
@@ -535,21 +538,16 @@ class VerbosePing(Verbose,Ping):
 
 """Shortcut methods, not async"""
 
-def single_ping(timeout=3, **av):
-    ping = Ping(**av)
-    ping.loop.run_until_complete(ping.init())
-    res = ping.loop.run_until_complete(asyncio.wait_for(timeout, ping.single(), ping.loop))
+async def ping(dest_addr, timeout=10):
+    ping = Ping(dest_addr, **av)
+    await ping.init()
+    res = await asyncio.wait_for(timeout, ping.single(), ping.loop)
     ping.close()
     return res
 
-def _pathfind_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
-                   **kw):
-    single_ping(destIP, hostname, timeout, mySeqNumber, numDataBytes,
-                verbose=False, **kw)
-    time.sleep(0.5)
+single_ping = ping
 
-
-def ping(hostname, verbose=True, stats=False, handle_signals=None, count=3, **kw):
+async def verbose_ping(dest_addr, verbose=True, stats=False, handle_signals=None, timeout=5, count=3, **kw):
     """
     Send @count ping to @destIP with the given @timeout, and display
     the result.
@@ -557,23 +555,23 @@ def ping(hostname, verbose=True, stats=False, handle_signals=None, count=3, **kw
     To continuously attempt ping requests, set @count to zero.
 
     Installs a signal handler if @count is zero.
-    Override this by setting @handle_signals.
+    Override this by setting @handle_signals to false.
 
     Returns the ping statistics object if @stats is true. Otherwise,
     the result is True if there was at least one valid echo.
     """
     if 'stats' not in kw:
         kw['stats'] = MStats2()
-    ping = (VerbosePing if verbose else Ping)(verbose=verbose, count=count, **kw)
+    ping = VerbosePing(verbose=verbose, count=count, **kw)
     if handle_signals is None:
         handle_signals = (not count)
     if handle_signals:
         ping.add_signal_handler()
     try:
-        ping.loop.run_until_complete(ping.init(hostname))
-        res = ping.loop.run_until_complete(ping.run())
+        await ping.init(dest_addr)
+        res = await ping.run()
     except OSError as e:
-        print("%s: %s" % (hostname,str(e)))
+        print("%s: %s" % (dest_addr,str(e)))
         return
     except Exception as e:
         traceback.print_exc()
@@ -586,3 +584,15 @@ def ping(hostname, verbose=True, stats=False, handle_signals=None, count=3, **kw
         return stats
     return res
 
+if __name__ == "__main__":
+    from pprint import pprint
+    loop = asyncio.get_event_loop()
+
+    tasks = [
+        asyncio.ensure_future(verbose_ping("heise.de")),
+        asyncio.ensure_future(verbose_ping("google.com")),
+        asyncio.ensure_future(verbose_ping("a-test-url-taht-is-not-available.com")),
+        asyncio.ensure_future(verbose_ping("192.168.1.111"))
+    ]
+
+    pprint(loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True)))

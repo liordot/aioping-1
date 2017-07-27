@@ -87,7 +87,7 @@ def get_authors():
 
 
 setup(
-    name='aio_ping',
+    name='aioping',
     version=get_version_from_git(),
     description='An async python ICMP ping implementation using raw sockets.',
     long_description=long_description,
