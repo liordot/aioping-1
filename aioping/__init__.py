@@ -588,11 +588,9 @@ if __name__ == "__main__":
     from pprint import pprint
     loop = asyncio.get_event_loop()
 
-    tasks = [
-        asyncio.ensure_future(verbose_ping("heise.de")),
-        asyncio.ensure_future(verbose_ping("google.com")),
-        asyncio.ensure_future(verbose_ping("a-test-url-taht-is-not-available.com")),
-        asyncio.ensure_future(verbose_ping("192.168.1.111"))
-    ]
+    for p in (ping,verbose_ping):
+        tasks = []
+        for host in "heise.de google.com not-available.invalid 192.168.1.111".split(" "):
+            tasks.append(asyncio.ensure_future(p(host)))
+        pprint(loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True)))
 
-    pprint(loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True)))
