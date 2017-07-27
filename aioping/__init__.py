@@ -41,12 +41,14 @@ import signal
 import asyncio
 import traceback
 
+__all__ = "Ping Verbose VerbosePing ping verbose_ping simple_ping".split()
+
 if __name__ == '__main__':
     import argparse
 
-class NoAddressFound(RuntimeError):
+class NoAddressFound(OSError):
     pass
-class ICMPError(RuntimeError):
+class ICMPError(OSError):
     pass
 
 try:
@@ -365,11 +367,7 @@ class Ping(object):
                         loop=self.loop)
                 recv = await recv
                 if isinstance(recv,Exception): # error
-                    if isinstance(recv,ICMPError):
-                        print("ICMP Error: %s/%s" % recv.args)
-                        continue
-                    else:
-                        raise
+                    raise recv
                 recvTime, dataSize, iphSrcIP, icmpSeqNumber, iphTTL = recv
                 delay = recvTime - self.startTime - icmpSeqNumber * self.interval
                 await self.pinged(recvTime=recvTime, delay=delay,
@@ -573,13 +571,13 @@ def ping(hostname, verbose=True, stats=False, handle_signals=None, count=3, **kw
         ping.add_signal_handler()
     try:
         ping.loop.run_until_complete(ping.init(hostname))
-    except socket.gaierror as e:
+        res = ping.loop.run_until_complete(ping.run())
+    except OSError as e:
         print("%s: %s" % (hostname,str(e)))
         return
     except Exception as e:
         traceback.print_exc()
         return
-    res = ping.loop.run_until_complete(ping.run())
     if verbose:
         ping.print_stats()
     ping.close()
