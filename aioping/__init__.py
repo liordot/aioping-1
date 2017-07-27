@@ -335,7 +335,7 @@ class Ping(object):
         """Hook to catch a successful ping"""
         pass
 
-    async def looped(self):
+    async def run(self):
         """
         Send .count ping to .destIP with the given delay and timeout.
 
@@ -590,7 +590,7 @@ def ping(hostname, verbose=True, stats=False, handle_signals=None, count=3, **kw
     except Exception as e:
         traceback.print_exc()
         return
-    res = ping.loop.run_until_complete(ping.looped())
+    res = ping.loop.run_until_complete(ping.run())
     if verbose:
         ping.print_stats()
     ping.close()
