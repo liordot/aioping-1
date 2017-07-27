@@ -294,6 +294,9 @@ class Ping(object):
             self.socket.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE,
                 (self.sourceIntf + '\0').encode('utf-8'))
 
+        if self.stats:
+            self.stats.thisIP = self.destIP
+
         # Don't block on the socket
         flag = fcntl.fcntl(self.socket.fileno(), fcntl.F_GETFL)
         fcntl.fcntl(self.socket.fileno(), fcntl.F_SETFL, (flag | os.O_NONBLOCK))
