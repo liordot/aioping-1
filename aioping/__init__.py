@@ -317,9 +317,7 @@ class Ping(object):
 
         recv = self.queue.get()
         if timeout is None or timeout > self.timeout:
-            timeout = self.interval
-        if timeout is None or timeout > self.delay:
-            timeout = self.interval
+            timeout = self.timeout
 
         if timeout is not None:
             recv = asyncio.wait_for(recv, timeout, loop=self.loop)
@@ -536,12 +534,18 @@ class Verbose(object):
 class VerbosePing(Verbose,Ping):
     pass
 
-"""Shortcut methods, not async"""
-
-async def ping(dest_addr, timeout=10):
-    ping = Ping(dest_addr, **av)
+async def ping(dest_addr, timeout=10, **kw):
+    """
+    Returns either the delay (in seconds) or raises an exception.
+    @dest_addr: host name or IP address to ping.
+    @timeout: maximum delay.
+    """
+    ping = Ping(dest_addr, **kw)
     await ping.init()
-    res = await asyncio.wait_for(timeout, ping.single(), ping.loop)
+    res = ping.single()
+    if timeout:
+        res = asyncio.wait_for(res, timeout, loop=ping.loop)
+    res = await res
     ping.close()
     return res
 
