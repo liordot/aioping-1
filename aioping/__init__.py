@@ -258,7 +258,12 @@ class Ping(object):
 
         global _next_id
         self.ID = _next_id
-        _next_id += 1
+
+        # This is required to prevent the overflow of the 16-bit 'identification' bit.
+        if _next_id == 65535:
+            _next_id = 0
+        else:
+            _next_id += 1
 
         if self.destIP is None:
             if hostname is None:
