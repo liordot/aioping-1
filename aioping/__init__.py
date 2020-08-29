@@ -36,7 +36,6 @@ import os
 import sys
 import time
 import array
-import fcntl
 import socket
 import struct
 import select
@@ -308,8 +307,7 @@ class Ping(object):
             self.stats.thisIP = self.destIP
 
         # Don't block on the socket
-        flag = fcntl.fcntl(self.socket.fileno(), fcntl.F_GETFL)
-        fcntl.fcntl(self.socket.fileno(), fcntl.F_SETFL, (flag | os.O_NONBLOCK))
+        self.socket.setblocking(False)
 
         self.loop.add_reader(self.socket.fileno(), self._receive)
 
