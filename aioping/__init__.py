@@ -286,8 +286,7 @@ class Ping(object):
         if self.ipv6:
             self.socket = socket.socket(socket.AF_INET6, socket.SOCK_RAW,
                 socket.getprotobyname("ipv6-icmp"))
-            self.socket.setsockopt(socket.IPPROTO_IPV6,
-                socket.IPV6_RECVHOPLIMIT, 1)
+            self.socket.setsockopt(41, 51, 1)
         else:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_RAW,
                 socket.getprotobyname("icmp"))
